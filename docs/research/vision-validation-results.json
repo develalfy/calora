@@ -1,0 +1,473 @@
+[
+  {
+    "label": "Big Mac burger (close-up)",
+    "expected": "~550 kcal",
+    "result": {
+      "items": [
+        {
+          "name": "sesame seed hamburger bun",
+          "calories": 240,
+          "protein_g": 8,
+          "carbs_g": 43,
+          "fat_g": 4
+        },
+        {
+          "name": "beef patty (6 oz cooked)",
+          "calories": 480,
+          "protein_g": 42,
+          "carbs_g": 0,
+          "fat_g": 34
+        },
+        {
+          "name": "american cheese (2 slices)",
+          "calories": 160,
+          "protein_g": 8,
+          "carbs_g": 2,
+          "fat_g": 14
+        },
+        {
+          "name": "lettuce",
+          "calories": 5,
+          "protein_g": 0,
+          "carbs_g": 1,
+          "fat_g": 0
+        },
+        {
+          "name": "tomato slices",
+          "calories": 10,
+          "protein_g": 0,
+          "carbs_g": 2,
+          "fat_g": 0
+        },
+        {
+          "name": "red onion slices",
+          "calories": 8,
+          "protein_g": 0,
+          "carbs_g": 2,
+          "fat_g": 0
+        },
+        {
+          "name": "pickles",
+          "calories": 5,
+          "protein_g": 0,
+          "carbs_g": 1,
+          "fat_g": 0
+        },
+        {
+          "name": "special sauce/mayo",
+          "calories": 120,
+          "protein_g": 0,
+          "carbs_g": 2,
+          "fat_g": 13
+        }
+      ],
+      "totals": {
+        "calories": 1028,
+        "protein_g": 58,
+        "carbs_g": 53,
+        "fat_g": 65
+      },
+      "confidence": "medium",
+      "notes": "Large double cheeseburger with sesame bun, appears to be 6oz total beef (2 patties), 2 cheese slices, lettuce, tomato, red onion, pickles, and creamy sauce. Estimated sauce amount based on visible coverage."
+    },
+    "latency": 5.519284009933472,
+    "usage": {
+      "prompt_tokens": 900,
+      "completion_tokens": 472,
+      "total_tokens": 1372,
+      "cost": 0.00978,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00978,
+        "upstream_inference_prompt_cost": 0.0027,
+        "upstream_inference_completions_cost": 0.00708
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "label": "Buddha bowl (rice/veg/protein)",
+    "expected": "~400 kcal",
+    "result": {
+      "items": [
+        {
+          "name": "Mixed greens salad base",
+          "calories": 10,
+          "protein_g": 1,
+          "carbs_g": 2,
+          "fat_g": 0
+        },
+        {
+          "name": "Seasoned tofu cubes",
+          "calories": 180,
+          "protein_g": 20,
+          "carbs_g": 4,
+          "fat_g": 11
+        },
+        {
+          "name": "Hard boiled eggs",
+          "calories": 140,
+          "protein_g": 12,
+          "carbs_g": 1,
+          "fat_g": 10
+        },
+        {
+          "name": "Chickpeas",
+          "calories": 135,
+          "protein_g": 6,
+          "carbs_g": 22,
+          "fat_g": 2
+        },
+        {
+          "name": "Cherry tomatoes",
+          "calories": 15,
+          "protein_g": 1,
+          "carbs_g": 3,
+          "fat_g": 0
+        },
+        {
+          "name": "Cucumber slices",
+          "calories": 8,
+          "protein_g": 0,
+          "carbs_g": 2,
+          "fat_g": 0
+        },
+        {
+          "name": "Red cabbage",
+          "calories": 10,
+          "protein_g": 1,
+          "carbs_g": 2,
+          "fat_g": 0
+        },
+        {
+          "name": "Green onions",
+          "calories": 5,
+          "protein_g": 0,
+          "carbs_g": 1,
+          "fat_g": 0
+        }
+      ],
+      "totals": {
+        "calories": 503,
+        "protein_g": 41,
+        "carbs_g": 37,
+        "fat_g": 23
+      },
+      "confidence": "medium",
+      "notes": "Buddha bowl with mixed greens base, 3oz seasoned tofu cubes, 2 hard boiled egg halves, 1/2 cup chickpeas, 1/4 cup cherry tomatoes, cucumber slices, red cabbage, and green onions. Cannot determine if dressing or cooking oil was used, which could add additional calories and fat."
+    },
+    "latency": 5.924749374389648,
+    "usage": {
+      "prompt_tokens": 1045,
+      "completion_tokens": 484,
+      "total_tokens": 1529,
+      "cost": 0.010395,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.010395,
+        "upstream_inference_prompt_cost": 0.003135,
+        "upstream_inference_completions_cost": 0.00726
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "label": "Pancakes with berries",
+    "expected": "~300 kcal",
+    "result": {
+      "items": [
+        {
+          "name": "pancakes",
+          "calories": 520,
+          "protein_g": 11,
+          "carbs_g": 66,
+          "fat_g": 24
+        },
+        {
+          "name": "maple syrup",
+          "calories": 104,
+          "protein_g": 0,
+          "carbs_g": 27,
+          "fat_g": 0
+        },
+        {
+          "name": "banana slices",
+          "calories": 45,
+          "protein_g": 1,
+          "carbs_g": 11,
+          "fat_g": 0
+        }
+      ],
+      "totals": {
+        "calories": 669,
+        "protein_g": 12,
+        "carbs_g": 104,
+        "fat_g": 24
+      },
+      "confidence": "high",
+      "notes": "Stack of approximately 8 medium pancakes (4 inches diameter each) with maple syrup being poured on top and banana slices as garnish. Mint leaves visible for decoration. Estimated 2 tablespoons maple syrup and half a small banana in slices."
+    },
+    "latency": 5.3577306270599365,
+    "usage": {
+      "prompt_tokens": 1219,
+      "completion_tokens": 248,
+      "total_tokens": 1467,
+      "cost": 0.007377,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.007377,
+        "upstream_inference_prompt_cost": 0.003657,
+        "upstream_inference_completions_cost": 0.00372
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "label": "Pizza slice",
+    "expected": "~600 kcal",
+    "result": {
+      "items": [
+        {
+          "name": "Hamburger with sesame seed bun",
+          "calories": 540,
+          "protein_g": 25,
+          "carbs_g": 40,
+          "fat_g": 31
+        },
+        {
+          "name": "Lettuce",
+          "calories": 5,
+          "protein_g": 0,
+          "carbs_g": 1,
+          "fat_g": 0
+        },
+        {
+          "name": "French fries",
+          "calories": 365,
+          "protein_g": 4,
+          "carbs_g": 48,
+          "fat_g": 17
+        }
+      ],
+      "totals": {
+        "calories": 910,
+        "protein_g": 29,
+        "carbs_g": 89,
+        "fat_g": 48
+      },
+      "confidence": "medium",
+      "notes": "Saw a hamburger with sesame seed bun, beef patty, lettuce, and what appears to be sauce/mayo. Assumed 1/4 lb beef patty. French fries appear to be medium restaurant portion (about 4 oz). Cannot determine exact condiments or cooking oil amounts which affects accuracy."
+    },
+    "latency": 3.8441789150238037,
+    "usage": {
+      "prompt_tokens": 784,
+      "completion_tokens": 264,
+      "total_tokens": 1048,
+      "cost": 0.006312,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.006312,
+        "upstream_inference_prompt_cost": 0.002352,
+        "upstream_inference_completions_cost": 0.00396
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "label": "Garden salad",
+    "expected": "~200 kcal",
+    "result": {
+      "items": [
+        {
+          "name": "Mixed greens salad",
+          "calories": 20,
+          "protein_g": 2,
+          "carbs_g": 4,
+          "fat_g": 0
+        },
+        {
+          "name": "Shredded carrots",
+          "calories": 25,
+          "protein_g": 1,
+          "carbs_g": 6,
+          "fat_g": 0
+        },
+        {
+          "name": "Red onion slices",
+          "calories": 15,
+          "protein_g": 0,
+          "carbs_g": 4,
+          "fat_g": 0
+        },
+        {
+          "name": "Walnuts",
+          "calories": 130,
+          "protein_g": 3,
+          "carbs_g": 3,
+          "fat_g": 13
+        },
+        {
+          "name": "Feta cheese cubes",
+          "calories": 60,
+          "protein_g": 4,
+          "carbs_g": 1,
+          "fat_g": 5
+        },
+        {
+          "name": "Dried cranberries",
+          "calories": 45,
+          "protein_g": 0,
+          "carbs_g": 12,
+          "fat_g": 0
+        },
+        {
+          "name": "Orange juice",
+          "calories": 110,
+          "protein_g": 2,
+          "carbs_g": 26,
+          "fat_g": 0
+        },
+        {
+          "name": "Orange slices",
+          "calories": 30,
+          "protein_g": 1,
+          "carbs_g": 8,
+          "fat_g": 0
+        }
+      ],
+      "totals": {
+        "calories": 435,
+        "protein_g": 13,
+        "carbs_g": 64,
+        "fat_g": 18
+      },
+      "confidence": "medium",
+      "notes": "Saw mixed green salad with shredded carrots, red onion, walnuts, white cheese cubes (assumed feta), dark dried fruit (assumed cranberries), 8oz orange juice, and 2 orange wedges. Assumed standard portions but no visible dressing accounted for which could add calories."
+    },
+    "latency": 6.583696365356445,
+    "usage": {
+      "prompt_tokens": 1451,
+      "completion_tokens": 476,
+      "total_tokens": 1927,
+      "cost": 0.011493,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.011493,
+        "upstream_inference_prompt_cost": 0.004353,
+        "upstream_inference_completions_cost": 0.00714
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "label": "Stir fry with rice",
+    "expected": "~400 kcal",
+    "result": {
+      "items": [
+        {
+          "name": "layered cake slice with cream filling",
+          "calories": 320,
+          "protein_g": 4,
+          "carbs_g": 45,
+          "fat_g": 14
+        },
+        {
+          "name": "fresh raspberries",
+          "calories": 15,
+          "protein_g": 0,
+          "carbs_g": 4,
+          "fat_g": 0
+        },
+        {
+          "name": "fresh strawberries",
+          "calories": 12,
+          "protein_g": 0,
+          "carbs_g": 3,
+          "fat_g": 0
+        }
+      ],
+      "totals": {
+        "calories": 347,
+        "protein_g": 4,
+        "carbs_g": 52,
+        "fat_g": 14
+      },
+      "confidence": "medium",
+      "notes": "I see a slice of layered cake with white cream/frosting and berry filling, topped with 3-4 raspberries. Additional strawberries and raspberries are visible around the plate. Estimated medium cake slice (80g) with standard cream filling. Uncertain about exact cake type and sugar content in filling."
+    },
+    "latency": 5.093959093093872,
+    "usage": {
+      "prompt_tokens": 1248,
+      "completion_tokens": 264,
+      "total_tokens": 1512,
+      "cost": 0.007704,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.007704,
+        "upstream_inference_prompt_cost": 0.003744,
+        "upstream_inference_completions_cost": 0.00396
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  }
+]
