@@ -1,0 +1,105 @@
+[
+  {
+    "label": "Cheeseburger (single)",
+    "expected": "~250 kcal each",
+    "error": "HTTP Error 402: Payment Required"
+  },
+  {
+    "label": "Caesar salad with chicken",
+    "expected": "~500 kcal",
+    "result": {
+      "items": [
+        {
+          "name": "grilled steak with bone",
+          "calories": 520,
+          "protein_g": 45,
+          "carbs_g": 2,
+          "fat_g": 36
+        },
+        {
+          "name": "steamed broccoli",
+          "calories": 25,
+          "protein_g": 3,
+          "carbs_g": 5,
+          "fat_g": 0
+        },
+        {
+          "name": "grilled shrimp",
+          "calories": 60,
+          "protein_g": 12,
+          "carbs_g": 0,
+          "fat_g": 1
+        },
+        {
+          "name": "dark sauce/gravy",
+          "calories": 40,
+          "protein_g": 1,
+          "carbs_g": 6,
+          "fat_g": 2
+        }
+      ],
+      "totals": {
+        "calories": 645,
+        "protein_g": 61,
+        "carbs_g": 13,
+        "fat_g": 39
+      },
+      "confidence": "medium",
+      "notes": "I see a grilled bone-in steak (appears to be ribeye or similar cut, approximately 8 oz) with grill marks and a dark sauce drizzled over it. There are 2-3 large grilled shrimp and a portion of steamed broccoli (about 1 cup) as sides. The steak appears medium-rare to medium doneness. Dark reddish-brown sauce pooled around the plate."
+    },
+    "latency": 5.682478666305542,
+    "usage": {
+      "prompt_tokens": 1480,
+      "completion_tokens": 336,
+      "total_tokens": 1816,
+      "cost": 0.00948,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00948,
+        "upstream_inference_prompt_cost": 0.00444,
+        "upstream_inference_completions_cost": 0.00504
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  },
+  {
+    "label": "Pizza margherita",
+    "expected": "~300 kcal/slice",
+    "error": "HTTP Error 402: Payment Required"
+  },
+  {
+    "label": "Pancakes stack",
+    "expected": "~350 kcal",
+    "error": "HTTP Error 402: Payment Required"
+  },
+  {
+    "label": "Cheeseburger with fries",
+    "expected": "~570 kcal",
+    "error": "HTTP Error 402: Payment Required"
+  },
+  {
+    "label": "Healthy bowl",
+    "expected": "~400 kcal",
+    "error": "HTTP Error 402: Payment Required"
+  },
+  {
+    "label": "Ramen",
+    "expected": "~600 kcal",
+    "error": "HTTP Error 402: Payment Required"
+  },
+  {
+    "label": "Sushi platter",
+    "expected": "~700 kcal",
+    "error": "HTTP Error 402: Payment Required"
+  }
+]
