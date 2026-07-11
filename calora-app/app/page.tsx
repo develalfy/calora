@@ -21,6 +21,7 @@ import {
   uuid,
 } from "@/lib/storage";
 import { compressImage } from "@/lib/image";
+import { downloadCSV, exportToCSV } from "@/lib/export";
 
 type View = "home" | "capture" | "loading" | "edit" | "history" | "settings";
 
@@ -784,7 +785,17 @@ function HistoryView({
           ← Back
         </button>
         <h1 className="font-semibold">Last 7 days</h1>
-        <div className="w-10" />
+        <button
+          onClick={() => {
+            const csv = exportToCSV(log);
+            const stamp = new Date().toISOString().slice(0, 10);
+            downloadCSV(`calora-${stamp}.csv`, csv);
+          }}
+          disabled={log.length === 0}
+          className="text-sm text-emerald-600 disabled:text-zinc-300 dark:disabled:text-zinc-700 disabled:cursor-not-allowed"
+        >
+          Export CSV
+        </button>
       </div>
       {days.map((d) => {
         const label =
@@ -903,6 +914,17 @@ function SettingsView({
       <p className="text-xs text-zinc-500 text-center mt-4">
         Data lives on this device only. v0.1 MVP — no account, no sync.
       </p>
+
+      <div className="mt-8 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+          About / Disclaimer
+        </h2>
+        <p className="text-xs text-zinc-500 leading-relaxed">
+          Calora is not a medical device. AI estimates are approximate —
+          always edit anything that looks wrong before saving. Consult a
+          qualified professional for medical nutrition advice.
+        </p>
+      </div>
     </div>
   );
 }

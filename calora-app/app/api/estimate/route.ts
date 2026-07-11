@@ -31,14 +31,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  function pickModel(): string {
+  function pickModel(req: NextRequest): string {
     if (process.env.CALORA_MODEL) return process.env.CALORA_MODEL;
     const requested = req.nextUrl.searchParams.get("model");
     if (requested === "sonnet") return "anthropic/claude-sonnet-4";
     if (requested === "haiku") return "anthropic/claude-3-haiku";
     return process.env.CALORA_DEFAULT_MODEL ?? "anthropic/claude-3-haiku";
   }
-  const model = pickModel();
+  const model = pickModel(req);
 
   const meal = body.context?.meal ?? "meal";
 
@@ -80,13 +80,7 @@ export async function POST(req: NextRequest) {
         // Model selection: env override > client param > default.
         // Sonnet is best for food vision but is more expensive.
         // Haiku is the dev/demo fallback; still works, cheaper.
-        model:
-          process.env.CALORA_MODEL ??
-          (req.nextUrl.searchParams.get("model") === "sonnet"
-            ? "anthropic/claude-sonnet-4"
-            : req.nextUrl.searchParams.get("model") === "haiku"
-              ? "anthropic/claude-3-haiku"
-              : process.env.CALORA_DEFAULT_MODEL ?? "anthropic/claude-3-haiku"),
+        model: model,
         messages: [{ role: "user", content: userContent }],
         max_tokens: 250,
         temperature: 0.2,
@@ -136,13 +130,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Pick the same model the request used (for _meta echo)
-    const requestModel =
-      process.env.CALORA_MODEL ??
-      (req.nextUrl.searchParams.get("model") === "sonnet"
-        ? "anthropic/claude-sonnet-4"
-        : req.nextUrl.searchParams.get("model") === "haiku"
-          ? "anthropic/claude-3-haiku"
-          : process.env.CALORA_DEFAULT_MODEL ?? "anthropic/claude-3-haiku");
+    const requestModel = pickModel(req);
 
     return NextResponse.json({
       ...parsed,
