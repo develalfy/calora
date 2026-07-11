@@ -7,9 +7,37 @@ import type { EstimateRequest, EstimateResponse } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 120; // seconds — covers 3 retry attempts
 
-const PROMPT = `Return ONLY valid JSON (no markdown). Schema:
+const PROMPT = `Return ONLY valid JSON (no markdown, no preamble, no trailing text). Schema:
 {"items":[{"name":"<item>","calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}],"totals":{"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>},"confidence":"high"|"medium"|"low","notes":"<one line>"}
 USDA portion sizes. Round calories to nearest 5. If uncertain, lower confidence. Break out each item separately. Meal: {meal}.`;
+
+// Reasoning models (e.g. minimax/minimax-m3) bleed their thinking into the response and rarely close
+// their <think>... block before the JSON. Extract the JSON robustly: skip any leading prose, then
+// parse from the first balanced { ... } block.
+function extractJson(text: string): string {
+  // Strip any `` ... `` fence if present
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) return fenced[1].trim();
+  // Find the first { and walk forward to find the matching close brace
+  const start = text.indexOf("{");
+  if (start < 0) return text.trim();
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (escape) { escape = false; continue; }
+    if (c === "\\") { escape = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return text.slice(start);
+}
 
 export async function POST(req: NextRequest) {
   let body: EstimateRequest;
@@ -31,14 +59,25 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  function pickModel(req: NextRequest): string {
-    if (process.env.CALORA_MODEL) return process.env.CALORA_MODEL;
+  function pickModel(req: NextRequest): string[] {
+    if (process.env.CALORA_MODEL) return [process.env.CALORA_MODEL];
     const requested = req.nextUrl.searchParams.get("model");
-    if (requested === "sonnet") return "anthropic/claude-sonnet-4";
-    if (requested === "haiku") return "anthropic/claude-3-haiku";
-    return process.env.CALORA_DEFAULT_MODEL ?? "anthropic/claude-3-haiku";
+    // Default chain: Gemini 2.5 Flash (~1.5s, JSON-clean, cheapest), with fallbacks if 402/429 from provider.
+    // Opt-ins:
+    //   ?model=minimax → minimax/minimax-m3 (reasoning, ~10s, more accurate for ambiguous foods)
+    //   ?model=sonnet  → anthropic/claude-sonnet-4 (most accurate, $$$)
+    //   ?model=haiku   → anthropic/claude-3-haiku
+    if (requested === "sonnet") return ["anthropic/claude-sonnet-4"];
+    if (requested === "haiku") return ["anthropic/claude-3-haiku"];
+    if (requested === "minimax") return ["minimax/minimax-m3"];
+    // Default fallback chain (tried in order on 402/5xx)
+    return [
+      process.env.CALORA_DEFAULT_MODEL ?? "google/gemini-2.5-flash",
+      "minimax/minimax-m3",
+    ];
   }
-  const model = pickModel(req);
+  const models = pickModel(req);
+  const model = models[0]; // for logging (_meta echo)
 
   const meal = body.context?.meal ?? "meal";
 
@@ -60,84 +99,80 @@ export async function POST(req: NextRequest) {
   }
 
   const t0 = Date.now();
-  try {
-    let orRes: Response | null = null;
-    let lastErr = "";
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        // Backoff: 5s, 12s
-        await new Promise((r) => setTimeout(r, attempt === 1 ? 5000 : 12000));
-      }
-      orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  // Try each model in order; on 402/429/5xx from the provider, fall through to the next.
+  // For opt-ins (single model), only one entry is tried — fails if it's down.
+  let lastErr = "";
+  let lastStatus: number | null = null;
+  let lastBody = "";
+  for (const m of models) {
+    try {
+      const orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          "Authorization": "Bearer " + apiKey,
           "Content-Type": "application/json",
           "HTTP-Referer": "https://calora.develalfy.me",
           "X-Title": "Calora",
         },
         body: JSON.stringify({
-        // Model selection: env override > client param > default.
-        // Sonnet is best for food vision but is more expensive.
-        // Haiku is the dev/demo fallback; still works, cheaper.
-        model: model,
-        messages: [{ role: "user", content: userContent }],
-        max_tokens: 250,
-        temperature: 0.2,
+          model: m,
+          messages: [{ role: "user", content: userContent }],
+          max_tokens: 1200,
+          temperature: 0.2,
         }),
       });
-      if (orRes.ok) break;
-      lastErr = await orRes.text();
-      // 402 = credit window or rate limit; back off and retry
-      // 5xx = transient, retry
-      if (orRes.status !== 402 && orRes.status < 500) break;
+      if (orRes.ok) {
+        const data = await orRes.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) {
+          lastErr = "empty content";
+          lastStatus = orRes.status;
+          continue;
+        }
+        // Parse JSON safely below; pass the parsed object forward
+        const cleaned = extractJson(content);
+        let parsed: EstimateResponse;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch (e) {
+          lastErr = `JSON parse (model=${m}): ${(e as Error).message}`;
+          lastStatus = 502;
+          lastBody = cleaned.slice(0, 500);
+          // Try next model in chain
+          continue;
+        }
+        if (!parsed.items || !parsed.totals) {
+          lastErr = `Missing fields (model=${m})`;
+          lastStatus = 502;
+          lastBody = JSON.stringify(parsed).slice(0, 500);
+          continue;
+        }
+        return NextResponse.json({
+          ...parsed,
+          _meta: { latency_ms: Date.now() - t0, model: m },
+        });
+      }
+      // Non-OK: record and try next model unless it's a 4xx that's clearly ours (400/401/403)
+      lastStatus = orRes.status;
+      lastBody = await orRes.text();
+      lastErr = `AI provider ${orRes.status} (model=${m})`;
+      if (orRes.status === 400 || orRes.status === 401 || orRes.status === 403) {
+        // Don't fall through for client errors
+        break;
+      }
+      // 402/429/5xx → continue to next model
+      console.warn(`Model ${m} failed ${orRes.status}, falling through to next`);
+    } catch (e) {
+      lastErr = `Network error (model=${m}): ${(e as Error).message}`;
     }
-
-    if (!orRes || !orRes.ok) {
-      console.error("OpenRouter error", orRes?.status, lastErr.slice(0, 500));
-      return NextResponse.json(
-        { error: `AI provider error (${orRes?.status ?? "?"})` },
-        { status: 502 },
-      );
-    }
-
-    const data = await orRes.json();
-    const raw = data.choices?.[0]?.message?.content ?? "";
-
-    // Strip possible markdown fences (model occasionally wraps)
-    const cleaned = raw
-      .trim()
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/, "");
-
-    let parsed: EstimateResponse;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      console.error("JSON parse fail:", cleaned.slice(0, 300));
-      return NextResponse.json(
-        { error: "AI returned malformed response", raw: cleaned.slice(0, 500) },
-        { status: 502 },
-      );
-    }
-
-    // Sanity check
-    if (!parsed.items || !parsed.totals) {
-      return NextResponse.json(
-        { error: "AI response missing fields", raw: parsed },
-        { status: 502 },
-      );
-    }
-
-    // Pick the same model the request used (for _meta echo)
-    const requestModel = pickModel(req);
-
-    return NextResponse.json({
-      ...parsed,
-      _meta: { latency_ms: Date.now() - t0, model: requestModel },
-    });
-  } catch (e) {
-    console.error("Estimate route error:", e);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
+
+  console.error("All models failed:", lastErr, lastBody.slice(0, 500));
+  return NextResponse.json(
+    {
+      error: lastErr || "AI provider error",
+      detail: lastBody.slice(0, 500),
+    },
+    { status: lastStatus ?? 502 },
+  );
 }
