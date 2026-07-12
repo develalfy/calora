@@ -93,6 +93,18 @@ The marketing landing page is live at https://calora.develalfy.me/ with verified
 24. Wrote `docs/MARKET_ANALYSIS.md` (22K) — verified data on 6 competitors from iTunes Lookup API + App Store reviews RSS + Brave snippets. Specific verified prices: MacroFactor $11.99/$47.99/$71.99, Cal AI $30/yr, MFP $19.99/$79.99 (Premium+) $24.99/$99.99, Lose It! $19.99/$39.99/$59.99 lifetime
 25. Wrote `docs/BUSINESS_PLAN.md` (17K) — unit economics ($0.15/mo AI cost per free user, 85-90% gross margin), $1k MRR path (need ~200 Pro subs or ~6,500 MAU at 3.2% conversion), 30/60/90 day plan
 26. Verified live: $4.99, $29.99, "7-day free trial" all visible on calora.develalfy.me
+
+### Phase 5 — Activation + conversion infrastructure (commit `cd29cd4`)
+27. `app/privacy/page.tsx` — full Privacy Policy (data on device, AI provider, GDPR, etc.) — required for Stripe
+28. `app/terms/page.tsx` — Terms of Service with prominent "Not a medical device" warning — required for Stripe
+29. `lib/analytics.ts` — clean event-tracking abstraction. 24 event types. Mock sink by default (localStorage ring buffer); drop-in PostHog replacement. SSR-safe.
+30. `lib/favorites.ts` — favorite meal templates for quick repeat (deep-clones items)
+31. `lib/storage.ts` — added `loadOnboarding/saveOnboarding/hasCompletedOnboarding`
+32. **3-step onboarding wizard** in `OnboardingView`: welcome → goal picker → ready. Skippable.
+33. **Upgrade modal** triggered when free scan limit hit. Anti-dark-pattern: dismissible, no fake urgency, "Maybe later" button.
+34. **`★ Favorite` button** on Edit view (saves meal template, shows toast).
+35. **`public/sw.js`** — service worker (cache-first for static, network-first for HTML, never caches API)
+36. **137 tests passing** (was 100). 9 test files including new: analytics (10), favorites (12), sw (10), onboarding (5).
 2. DESIGN.md full brand system + design tokens in `app/globals.css`
 3. PageHeader, HeroRing, MacroBar, Toast, EmptyState in `components/ui.tsx`
 4. Six screens (home, capture, loading, edit, history, settings, meal-detail) in `app/page.tsx`
