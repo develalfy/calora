@@ -1291,9 +1291,9 @@ function HistoryView({
           <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] mb-3">
             Daily totals
           </div>
-          <div className="flex items-end justify-between gap-1.5 h-[120px]">
+          <div className="flex items-stretch justify-between gap-1.5 h-[140px]">
             {days.map((d) => {
-              const h = Math.max(4, (d.total / maxDayTotal) * 100);
+              const h = Math.max(6, (d.total / maxDayTotal) * 100);
               const label =
                 d.dayStart === startOfDay(Date.now())
                   ? "Today"
@@ -1302,34 +1302,36 @@ function HistoryView({
                     });
               const dateLabel = new Date(d.dayStart).getDate();
               const isToday = d.dayStart === startOfDay(Date.now());
+              const hasData = d.total > 0;
               return (
-                <div key={d.dayStart} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                  <span className="text-[10px] tabular text-[var(--ink-muted)] truncate w-full text-center">
+                <div
+                  key={d.dayStart}
+                  className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0"
+                >
+                  <span className="text-[10px] tabular font-medium text-[var(--ink-soft)] h-4 truncate w-full text-center">
                     {d.total || "·"}
                   </span>
-                  <div className="w-full bg-[var(--surface-soft)] rounded-[6px] overflow-hidden flex-1 flex items-end">
-                    <div
-                      className="w-full transition-all duration-700"
-                      style={{
-                        height: `${h}%`,
-                        background: isToday
+                  <div
+                    className="relative w-full transition-all duration-700 rounded-t-[6px]"
+                    style={{
+                      height: hasData ? `${h}%` : "6px",
+                      background: hasData
+                        ? isToday
                           ? "var(--accent)"
-                          : d.total > 0
-                            ? "var(--accent-soft)"
-                            : "transparent",
-                        borderTop:
-                          d.total > 0
-                            ? isToday
-                              ? "1px solid var(--accent-hover)"
-                              : "1px solid var(--accent)"
-                            : "none",
-                      }}
-                    />
+                          : "var(--accent-soft)"
+                        : "var(--surface-strong)",
+                      border: hasData
+                        ? isToday
+                          ? "none"
+                          : "1px solid var(--accent)"
+                        : "none",
+                      minHeight: "4px",
+                    }}
+                  />
+                  <div className="text-[10px] font-medium text-[var(--ink-muted)] truncate w-full text-center mt-0.5">
+                    {label}
                   </div>
-                  <div className="text-[10px] text-[var(--ink-muted)] truncate w-full text-center">
-                    {label.slice(0, 3)}
-                  </div>
-                  <div className="text-[9px] text-[var(--ink-muted)] -mt-0.5 tabular">
+                  <div className="text-[9px] text-[var(--ink-muted)] tabular">
                     {dateLabel}
                   </div>
                 </div>
