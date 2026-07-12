@@ -31,6 +31,8 @@ import {
   PageHeader,
   PillToggle,
   Wordmark,
+  toast,
+  ToastHost,
 } from "@/components/ui";
 import {
   IconCamera,
@@ -102,16 +104,41 @@ export default function HomePage() {
   const todayTotals = useMemo(() => sumMacros(today), [today]);
 
   // Compute streak (consecutive days with at least 1 meal, including today)
-  const streak = useMemo(() => {
-    let count = 0;
+  // Streak + best-streak computation. The current streak is consecutive days
+  // with at least 1 meal (counting from today). The longest streak is the
+  // longest such run anywhere in the log (up to the last 90 days — enough
+  // for MVP without becoming O(n²)).
+  const { current: streak, longest: longestStreak } = useMemo(() => {
     const oneDay = 86_400_000;
-    const dayStart = startOfDay(now);
-    for (let i = 0; i < 30; i++) {
-      const dayEntries = entriesForDay(log, dayStart - i * oneDay);
-      if (dayEntries.length > 0) count++;
-      else if (i > 0) break;
+    const today = startOfDay(now);
+    // Build day-buckets for the last 90 days, oldest first.
+    const days: { start: number; has: boolean }[] = [];
+    for (let i = 89; i >= 0; i--) {
+      const ds = today - i * oneDay;
+      days.push({
+        start: ds,
+        has: entriesForDay(log, ds).length > 0,
+      });
     }
-    return count;
+    // Current streak: walk back from today, stop on first empty day.
+    let current = 0;
+    for (let i = days.length - 1; i >= 0; i--) {
+      if (days[i].has) current++;
+      else if (i === days.length - 1) continue; // today can be empty without breaking the streak display
+      else break;
+    }
+    // Longest streak anywhere.
+    let longest = 0;
+    let run = 0;
+    for (const d of days) {
+      if (d.has) {
+        run++;
+        longest = Math.max(longest, run);
+      } else {
+        run = 0;
+      }
+    }
+    return { current, longest };
   }, [log, now]);
 
   const onCapture = () => {
@@ -138,10 +165,28 @@ export default function HomePage() {
             todayTotals={todayTotals}
             goal={settings.goalCalories}
             streak={streak}
+            longestStreak={longestStreak}
             onCapture={onCapture}
             onHistory={() => setView("history")}
             onSettings={() => setView("settings")}
-            onRemove={(id) => setLog(removeEntry(id))}
+            onRemove={(id) => {
+              // Locate the entry so the undo toast can restore it.
+              const removed = log.find((e) => e.id === id);
+              setLog(removeEntry(id));
+              if (removed) {
+                toast(`Removed "${removed.items[0]?.name ?? "meal"}"`, {
+                  kind: "danger",
+                  undo: () => {
+                    setLog((cur) => {
+                      const next = [...cur, removed].sort(
+                        (a, b) => a.loggedAt - b.loggedAt,
+                      );
+                      return next;
+                    });
+                  },
+                });
+              }
+            }}
             onOpenMeal={(id) => {
               sessionStorage.setItem("calora:open-meal-id", id);
               setView("meal-detail");
@@ -186,8 +231,21 @@ export default function HomePage() {
           <HistoryView
             log={log}
             onBack={onHome}
-            onRemove={(id) => setLog(removeEntry(id))}
-          />
+            onRemove={(id) => {
+            const removed = log.find((e) => e.id === id);
+            setLog(removeEntry(id));
+            if (removed) {
+              toast(`Removed "${removed.items[0]?.name ?? "meal"}"`, {
+                kind: "danger",
+                undo: () => {
+                  setLog((cur) =>
+                    [...cur, removed].sort((a, b) => a.loggedAt - b.loggedAt),
+                  );
+                },
+              });
+            }
+          }}
+        />
         )}
         {view === "settings" && (
           <SettingsView
@@ -205,12 +263,24 @@ export default function HomePage() {
             log={log}
             onBack={onHome}
             onRemove={(id) => {
+              const removed = log.find((e) => e.id === id);
               setLog(removeEntry(id));
+              if (removed) {
+                toast(`Removed "${removed.items[0]?.name ?? "meal"}"`, {
+                  kind: "danger",
+                  undo: () => {
+                    setLog((cur) =>
+                      [...cur, removed].sort((a, b) => a.loggedAt - b.loggedAt),
+                    );
+                  },
+                });
+              }
               onHome();
             }}
           />
         )}
       </div>
+      <ToastHost />
     </main>
   );
 }
@@ -224,6 +294,7 @@ function HomeView({
   todayTotals,
   goal,
   streak,
+  longestStreak,
   onCapture,
   onHistory,
   onSettings,
@@ -234,6 +305,7 @@ function HomeView({
   todayTotals: Macros;
   goal: number;
   streak: number;
+  longestStreak: number;
   onCapture: () => void;
   onHistory: () => void;
   onSettings: () => void;
@@ -337,13 +409,25 @@ function HomeView({
           Log a meal
         </Button>
 
-        {streak >= 2 && (
-          <div className="mt-3 flex items-center justify-center gap-1.5 text-[12px] text-[var(--ink-muted)]">
-            <span className="text-[var(--accent)]">●</span>
-            <span>
-              <span className="font-semibold tabular text-[var(--ink-soft)]">{streak}</span>
-              {" "}day streak
-            </span>
+        {(streak >= 1 || longestStreak >= 1) && (
+          <div className="mt-3 flex items-center justify-center gap-3 text-[12px] text-[var(--ink-muted)]">
+            {streak >= 1 && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-[var(--accent)]">●</span>
+                <span>
+                  <span className="font-semibold tabular text-[var(--ink-soft)]">{streak}</span>
+                  {" "}day streak
+                </span>
+              </span>
+            )}
+            {longestStreak >= 1 && longestStreak > streak && (
+              <>
+                <span className="opacity-30">·</span>
+                <span>
+                  Best <span className="font-semibold tabular text-[var(--ink-soft)]">{longestStreak}</span>
+                </span>
+              </>
+            )}
           </div>
         )}
       </section>
@@ -426,7 +510,7 @@ function HeroRing({
           <defs>
             <linearGradient id="heroGrad" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="var(--accent)" />
-              <stop offset="100%" stopColor="#ff8a5b" />
+              <stop offset="100%" stopColor="var(--accent-bright)" />
             </linearGradient>
           </defs>
           <circle
@@ -519,11 +603,11 @@ function MealCard({
         : `${entry.items.length} items`;
   // First-letter avatar from the meal type + color hint.
   const initial = entry.meal.charAt(0).toUpperCase();
-  const initialsBg =
-    entry.meal === "breakfast" ? "#fbbf24"
-    : entry.meal === "lunch" ? "#ff6f4d"
-    : entry.meal === "dinner" ? "#a78bfa"
-    : "#86efac";
+  const mealColor =
+    entry.meal === "breakfast" ? "var(--meal-breakfast)"
+    : entry.meal === "lunch" ? "var(--meal-lunch)"
+    : entry.meal === "dinner" ? "var(--meal-dinner)"
+    : "var(--meal-snack)";
 
   return (
     <li>
@@ -543,7 +627,7 @@ function MealCard({
         <div
           className="w-11 h-11 rounded-[11px] shrink-0 overflow-hidden flex items-center justify-center"
           aria-hidden
-          style={!entry.imageDataUrl ? { background: `color-mix(in srgb, ${initialsBg} 22%, var(--surface-soft))` } : {}}
+          style={!entry.imageDataUrl ? { background: `color-mix(in srgb, ${mealColor} 22%, var(--surface-soft))` } : {}}
         >
           {entry.imageDataUrl ? (
             <img
@@ -554,7 +638,7 @@ function MealCard({
           ) : (
             <span
               className="font-[family-name:var(--font-display)] text-[16px] font-semibold"
-              style={{ color: initialsBg }}
+              style={{ color: mealColor }}
             >
               {initial}
             </span>
@@ -589,7 +673,7 @@ function MealCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (confirm("Remove this meal?")) onRemove();
+              onRemove();
             }}
             className="text-[var(--ink-muted)] hover:text-[var(--danger)] transition"
             aria-label="Remove meal"
@@ -859,6 +943,13 @@ function CaptureView({
             "transition",
           ].join(" ")}
         />
+
+        {/* Hint when empty + no recent meals — primes first-time users */}
+        {!text.trim() && suggestions.length === 0 && (
+          <p className="mt-2 text-[11px] text-[var(--ink-muted)]">
+            Try one of the examples below or describe your meal in your own words.
+          </p>
+        )}
 
         {/* Suggestion chips: recent dupes */}
         {suggestions.length > 0 && (
@@ -1564,9 +1655,7 @@ function HistoryView({
                           {e.totals.calories}
                         </span>
                         <button
-                          onClick={() => {
-                            if (confirm("Remove this meal?")) onRemove(e.id);
-                          }}
+                          onClick={() => onRemove(e.id)}
                           className="text-[var(--ink-muted)] hover:text-[var(--danger)] ml-1"
                           aria-label="Remove meal"
                         >
@@ -1897,9 +1986,7 @@ function MealDetailView({
           variant="danger"
           size="lg"
           full
-          onClick={() => {
-            if (confirm("Remove this meal?")) onRemove(entry.id);
-          }}
+          onClick={() => onRemove(entry.id)}
         >
           <IconTrash size={16} />
           Remove meal

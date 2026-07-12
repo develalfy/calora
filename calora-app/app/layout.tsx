@@ -45,7 +45,8 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cal+Sans&display=swap"
         />
-        <meta name="theme-color" content="#ff6f4d" />
+        <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#0c0a08" media="(prefers-color-scheme: dark)" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Calora" />

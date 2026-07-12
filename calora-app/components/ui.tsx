@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 
 /**
@@ -315,6 +316,89 @@ export function EmptyState({
         </p>
       )}
       {action && <div className="mt-2">{action}</div>}
+    </div>
+  );
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOAST — ephemeral feedback that doesn't block the UI.
+// Uses an internal pub-sub so any component can call `toast("...")` without
+// prop drilling. Single ToastHost is rendered once at the app root.
+// ════════════════════════════════════════════════════════════════════════════
+
+type ToastKind = "info" | "success" | "danger";
+export interface ToastMsg {
+  id: number;
+  text: string;
+  kind: ToastKind;
+  /** Optional undo handler — shows an "Undo" pill on the toast. */
+  undo?: () => void;
+}
+
+type Listener = (msg: ToastMsg) => void;
+const listeners = new Set<Listener>();
+let toastId = 0;
+
+export function toast(text: string, opts?: { kind?: ToastKind; undo?: () => void }) {
+  const msg: ToastMsg = {
+    id: ++toastId,
+    text,
+    kind: opts?.kind ?? "info",
+    undo: opts?.undo,
+  };
+  listeners.forEach((l) => l(msg));
+}
+
+export function ToastHost() {
+  const [stack, setStack] = useState<ToastMsg[]>([]);
+  useEffect(() => {
+    const onMsg = (m: ToastMsg) => {
+      setStack((s) => [...s, m]);
+      // Auto-dismiss after 4s
+      setTimeout(() => {
+        setStack((s) => s.filter((t) => t.id !== m.id));
+      }, 4000);
+    };
+    listeners.add(onMsg);
+    return () => {
+      listeners.delete(onMsg);
+    };
+  }, []);
+  return (
+    <div
+      className="fixed left-0 right-0 bottom-[max(20px,env(safe-area-inset-bottom))] z-50 px-5 pointer-events-none flex flex-col items-center gap-2"
+      role="status"
+      aria-live="polite"
+    >
+      {stack.map((m) => (
+        <div
+          key={m.id}
+          className="pointer-events-auto inline-flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full text-[13px] font-medium shadow-lg max-w-[90vw] animate-[slide-up_240ms_cubic-bezier(0.22,1,0.36,1)]"
+          style={{
+            background:
+              m.kind === "danger"
+                ? "var(--danger)"
+                : m.kind === "success"
+                ? "var(--success)"
+                : "var(--ink)",
+            color: "#fff",
+          }}
+        >
+          <span className="truncate">{m.text}</span>
+          {m.undo && (
+            <button
+              onClick={() => {
+                m.undo?.();
+                setStack((s) => s.filter((t) => t.id !== m.id));
+              }}
+              className="px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/30 text-white font-semibold transition"
+            >
+              Undo
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

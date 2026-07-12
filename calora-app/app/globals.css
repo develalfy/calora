@@ -44,6 +44,15 @@
   --macro-protein: #7c6cf0;
   --macro-carbs: #f59e0b;
   --macro-fat: #ec4899;
+
+  /* Meal-type avatars (used by MealCard initial badges) */
+  --meal-breakfast: #f59e0b;
+  --meal-lunch: #ff6f4d;
+  --meal-dinner: #7c6cf0;
+  --meal-snack: #16a34a;
+
+  /* Coral gradient end (lighter than accent) */
+  --accent-bright: #ff8a5b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -60,7 +69,14 @@
     --accent: #ff7f5f;       /* slightly brighter in dark */
     --accent-hover: #ff6f4d;
     --accent-soft: #2c1a14;
+    --accent-bright: #ffa088; /* softer bright for gradient */
     --lavender-soft: #1d1a30;
+    /* Meal avatars stay vivid against dark canvas */
+    --meal-breakfast: #fbbf24;
+    --meal-lunch: #ff7f5f;
+    --meal-dinner: #a78bfa;
+    --meal-snack: #4ade80;
+    /* Macro palette stays the same in dark for semantic clarity */
   }
 }
 
@@ -146,6 +162,10 @@ input[type="number"] { -moz-appearance: textfield; }
 @keyframes slide-in-from-left {
   from { transform: translateX(-24px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+@keyframes slide-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 .page-forward { animation: slide-in-from-right 240ms cubic-bezier(0.22, 1, 0.36, 1); }
 .page-back    { animation: slide-in-from-left 200ms cubic-bezier(0.22, 1, 0.36, 1); }
