@@ -11,7 +11,6 @@ if (typeof crypto === "undefined" || !("randomUUID" in crypto)) {
         return v.toString(16);
       }) as `${string}-${string}-${string}-${string}-${string}`,
   };
-  // @ts-expect-error augmenting globalThis.crypto for jsdom tests
   globalThis.crypto = { ...(globalThis.crypto ?? {}), ...polyfill };
 }
 

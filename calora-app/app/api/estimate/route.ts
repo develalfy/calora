@@ -3,9 +3,15 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { EstimateRequest, EstimateResponse } from "@/lib/types";
+import { rateLimit, clientKey } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 120; // seconds — covers 3 retry attempts
+
+// Per-IP rate limits. These protect the OpenRouter budget from abuse.
+// Authenticated users will have higher limits (post-MVP).
+const FREE_TIER_RPM = 10; // 10 requests/min per IP — covers normal usage + retries
+const FREE_TIER_RPH = 100; // 100 requests/hour per IP — hard ceiling on scraping
 
 const PROMPT = `Return ONLY valid JSON (no markdown, no preamble, no trailing text). Schema:
 {"items":[{"name":"<item>","calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}],"totals":{"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>},"confidence":"high"|"medium"|"low","notes":"<one line>"}
@@ -40,6 +46,44 @@ function extractJson(text: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  // ─── Rate limit gate ─────────────────────────────────────────────────────
+  const ip = clientKey(req as unknown as { headers: Headers; ip?: string });
+  const minute = rateLimit(`estimate:${ip}:m`, {
+    limit: FREE_TIER_RPM,
+    windowMs: 60_000,
+  });
+  if (!minute.allowed) {
+    return NextResponse.json(
+      {
+        error: "Rate limit exceeded — try again in a minute.",
+        retry_after_sec: minute.retryAfterSec,
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(minute.retryAfterSec),
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
+  }
+  const hour = rateLimit(`estimate:${ip}:h`, {
+    limit: FREE_TIER_RPH,
+    windowMs: 3_600_000,
+  });
+  if (!hour.allowed) {
+    return NextResponse.json(
+      { error: "Hourly quota exceeded — try again later." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(hour.retryAfterSec),
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
+  }
+
   let body: EstimateRequest;
   try {
     body = await req.json();

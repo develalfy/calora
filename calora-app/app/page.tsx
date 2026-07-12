@@ -59,14 +59,7 @@ import {
   IconUpload,
 } from "@/components/Icons";
 
-// Macro targets (default — derived from goal: 30% P, 40% C, 30% F at 4-4-9 kcal/g).
-function macroTargets(goalCalories: number) {
-  return {
-    protein_g: Math.round((goalCalories * 0.30) / 4),
-    carbs_g: Math.round((goalCalories * 0.40) / 4),
-    fat_g: Math.round((goalCalories * 0.30) / 9),
-  };
-}
+// Macro targets come from @/lib/calc (single source of truth, tested).
 
 const MACRO_PROTEIN = "var(--macro-protein)";
 const MACRO_CARBS = "var(--macro-carbs)";

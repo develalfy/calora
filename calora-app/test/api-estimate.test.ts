@@ -9,10 +9,18 @@ import { POST } from "@/app/api/estimate/route";
 const fetchMock = vi.fn();
 global.fetch = fetchMock as unknown as typeof fetch;
 
-function jsonRequest(body: unknown, query = ""): NextRequest {
+let ipCounter = 0;
+function uniqueIp(): string {
+  return `test-ip-${++ipCounter}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function jsonRequest(body: unknown, query = "", ip = uniqueIp()): NextRequest {
   return new NextRequest(`http://localhost/api/estimate${query}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-forwarded-for": ip,
+    },
     body: JSON.stringify(body),
   });
 }
@@ -42,6 +50,7 @@ describe("POST /api/estimate — input validation", () => {
   it("returns 400 on invalid JSON", async () => {
     const req = new NextRequest("http://localhost/api/estimate", {
       method: "POST",
+      headers: { "x-forwarded-for": uniqueIp() },
       body: "not json",
     });
     const res = await POST(req);
@@ -63,6 +72,30 @@ describe("POST /api/estimate — input validation", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toMatch(/misconfigured/i);
+  });
+});
+
+describe("POST /api/estimate — rate limiting", () => {
+  it("returns 429 after 10 requests/min", async () => {
+    const ip = uniqueIp();
+    for (let i = 0; i < 10; i++) {
+      fetchMock.mockResolvedValueOnce(
+        orSuccess(
+          JSON.stringify({
+            items: [{ name: "X", calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 }],
+            totals: { calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 },
+            confidence: "low",
+            notes: "",
+          }),
+        ),
+      );
+      const r = await POST(jsonRequest({ text: "x" }, "", ip));
+      expect(r.status).toBe(200);
+    }
+    fetchMock.mockClear();
+    const res = await POST(jsonRequest({ text: "x" }, "", ip));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBeTruthy();
   });
 });
 
