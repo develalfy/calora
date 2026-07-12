@@ -6,9 +6,19 @@
 
 ## Current phase
 
-**Phase 1 — Inspection & audit (DONE) → Phase 2 — Business foundation (NEXT)**
+**Phase 1 — Inspection & audit (DONE) → Phase 2/4 — Landing page LIVE, awaiting market research**
 
-Working code is good; the app is a fully functional client-side MVP at https://calora.develalfy.me. There is **no auth, no backend persistence, no billing, no analytics** — every metric resets when the user clears localStorage. Before adding features we need the business primitives that every other phase depends on.
+The marketing landing page is now live at https://calora.develalfy.me/ (public-facing). The actual app moved to https://calora.develalfy.me/app. Free tier is 5 scans/day. Pro tier is a placeholder ("Coming soon") pending the market research subagent landing.
+
+---
+
+## What's LIVE right now (2026-07-12)
+
+- **Landing page** at `/` — hero, 3-step explainer, 6 features, pricing placeholder, FAQ, footer, medical disclaimer. No signup wall, no fake testimonials, no scarcity tactics.
+- **App** at `/app` — same Calora MVP as before (camera/text scan, edit, history, settings).
+- **API** at `/api/estimate` — Gemini 2.5 Flash + MiniMax fallback, now **rate-limited at 10 req/min and 100 req/hour per IP** (returns 429 with Retry-After).
+- **Health** at `/api/health` — returns ok=true, ai_configured=true.
+- **100 unit + integration tests** passing (`npm test`).
 
 ---
 
@@ -59,7 +69,25 @@ Working code is good; the app is a fully functional client-side MVP at https://c
 ## Completed work (cumulative, focus-topic weighted)
 
 ### Phase 0 — Visual polish + upload hardening (already shipped)
-1. Cal Sans + Inter fonts via Google Fonts in `app/layout.tsx`
+1-10. [see prior commits]
+
+### Phase 1 — Inspection, tests, rate limiting (commit `1cebc09` + `0a2b3b7`)
+11. Full audit of all files in calora-app/
+12. Wrote Vitest test suite: 100 tests across 6 files
+13. `lib/calc.ts` — pure business logic (streak, longest-streak, macro targets, pct, sumTotals, formatKcal)
+14. `lib/usage.ts` — daily scan quota tracker, AI cost math
+15. `lib/ratelimit.ts` — sliding-window in-process limiter with IP extraction
+16. **Wired rate limiter into `/api/estimate`** — 10 req/min + 100 req/hour per IP, returns 429 + Retry-After header
+17. Added npm scripts: `test`, `test:watch`, `test:coverage`, `typecheck`
+18. Removed duplicate `macroTargets` from page.tsx (single source of truth)
+
+### Phase 4 — Marketing landing page (commit `5a46303`)
+19. Built `app/page.tsx` — full marketing landing page (hero, 3 steps, 6 features, pricing, FAQ, footer, medical disclaimer)
+20. Moved the existing app to `app/app/page.tsx`
+21. Pricing card for **Free** (5 scans/day, no signup) + **Pro** ("Coming soon" — pending market research)
+22. Zero fake scarcity, zero dark patterns, honest "AI ±20% accurate" disclaimer
+23. Pushed to GitHub, Dokploy auto-rebuilt via webhook
+24. Verified live: landing renders, /app still works, /api/health OK
 2. DESIGN.md full brand system + design tokens in `app/globals.css`
 3. PageHeader, HeroRing, MacroBar, Toast, EmptyState in `components/ui.tsx`
 4. Six screens (home, capture, loading, edit, history, settings, meal-detail) in `app/page.tsx`
@@ -173,4 +201,12 @@ git log --oneline -20 → 5bbfa4e Polish pass: dark mode tokens, undo toast, lon
 
 ## Exact next action
 
-**Begin Phase 1, Step 1:** Research top 5 competitor pricing pages (MyFitnessPal, Lose It!, MacroFactor, Cronometer, Bitesnap, MyNetDiary), capture their pricing structure, free-tier limits, and onboarding patterns. Synthesize into `docs/MARKET_ANALYSIS.md`. Then derive Calora's positioning, pricing model, and unit economics into `docs/BUSINESS_PLAN.md`.
+```
+cd /home/develalfy/projects/calora
+# 1. Check if market analysis subagent has landed (was re-dispatched ~30min ago)
+ls -la docs/MARKET_ANALYSIS.md 2>/dev/null && wc -l docs/MARKET_ANALYSIS.md
+# 2. If yes, write docs/BUSINESS_PLAN.md from it (pricing tiers, unit econ, $1k MRR path)
+# 3. Update landing page with real Pro pricing
+# 4. Begin Phase 2 — Supabase auth + Postgres schema (or Clerk if Supabase setup is heavy)
+# 5. Add /api/meals endpoint that the client uses once authenticated
+```
