@@ -216,34 +216,40 @@ export default function LandingPage() {
               }
             />
 
-            {/* Pro tier — placeholder pricing */}
+            {/* Pro tier */}
             <PriceCard
               name="Pro"
-              price="Coming soon"
-              cadence=""
+              price="$4.99"
+              cadence="/month"
               highlight
               features={[
                 "Unlimited scans",
-                "History across devices",
-                "Weekly trend reports",
-                "Priority AI model",
-                "Priority support",
+                "Sync across devices",
+                "Weekly progress emails",
+                "Priority AI accuracy",
+                "7-day free trial — no surprise charges",
               ]}
               cta={
                 <Link
                   href="/app"
                   className="block w-full text-center px-5 py-3 rounded-[14px] bg-[var(--accent)] text-white font-semibold hover:bg-[var(--accent-hover)] transition shadow-[0_6px_16px_-6px_rgba(255,111,77,0.5)]"
                 >
-                  Try free first
+                  Start 7-day free trial
                 </Link>
               }
             />
           </div>
 
-          <p className="mt-8 text-center text-[12px] text-[var(--ink-muted)]">
-            Final Pro pricing will be published once we finish market research.
-            Early users get grandfathered pricing for life.
-          </p>
+          <div className="mt-8 text-center text-[12px] text-[var(--ink-muted)] space-y-1">
+            <p>
+              Annual plan: <span className="font-semibold text-[var(--ink-soft)]">$29.99/year</span>{" "}
+              (50% off, $2.50/month equivalent).
+            </p>
+            <p>
+              We&apos;ll email you 24 hours before your trial ends. Cancel anytime,
+              no questions asked.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -284,9 +290,9 @@ export default function LandingPage() {
               the app, snap the plate, done.
             </Faq>
             <Faq q="When does Pro launch?">
-              Soon. We&apos;re validating the free experience first. Join the
-              free tier now and you&apos;ll get early Pro access at the
-              grandfathered price.
+              Pro is live now at $4.99/month or $29.99/year, with a 7-day free
+              trial. We&apos;re still validating features, so early Pro users
+              get grandfathered pricing for life.
             </Faq>
           </div>
         </div>
