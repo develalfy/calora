@@ -22,6 +22,14 @@ import {
 import { compressImageSafe } from "@/lib/image";
 import { downloadCSV, exportToCSV } from "@/lib/export";
 import {
+  computeStreak,
+  computeLongestStreak,
+  macroTargets,
+  pct,
+  sumTotals,
+  formatKcal,
+} from "@/lib/calc";
+import {
   Button,
   Card,
   ConfidenceBadge,

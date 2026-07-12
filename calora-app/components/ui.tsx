@@ -355,10 +355,11 @@ export function ToastHost() {
   useEffect(() => {
     const onMsg = (m: ToastMsg) => {
       setStack((s) => [...s, m]);
-      // Auto-dismiss after 4s
+      // Auto-dismiss after 5s (slightly longer than typical so users have
+      // time to read + click undo).
       setTimeout(() => {
         setStack((s) => s.filter((t) => t.id !== m.id));
-      }, 4000);
+      }, 5000);
     };
     listeners.add(onMsg);
     return () => {
