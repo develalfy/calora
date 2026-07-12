@@ -6,19 +6,22 @@
 
 ## Current phase
 
-**Phase 1 — Inspection & audit (DONE) → Phase 2/4 — Landing page LIVE, awaiting market research**
+**Phase 1 — DONE. Phase 4 — Marketing live with real pricing.**
 
-The marketing landing page is now live at https://calora.develalfy.me/ (public-facing). The actual app moved to https://calora.develalfy.me/app. Free tier is 5 scans/day. Pro tier is a placeholder ("Coming soon") pending the market research subagent landing.
+The marketing landing page is live at https://calora.develalfy.me/ with verified pricing ($4.99/mo, $29.99/yr, 7-day free trial). The actual app is at https://calora.develalfy.me/app. Market analysis and business plan are written. Next: Phase 2 (auth + Postgres + Stripe).
 
 ---
 
-## What's LIVE right now (2026-07-12)
+## What's LIVE right now (2026-07-12, 18:38 UTC)
 
-- **Landing page** at `/` — hero, 3-step explainer, 6 features, pricing placeholder, FAQ, footer, medical disclaimer. No signup wall, no fake testimonials, no scarcity tactics.
+- **Landing page** at `/` — hero, 3-step explainer, 6 features, **real pricing** ($4.99/mo, $29.99/yr), FAQ, footer, medical disclaimer.
 - **App** at `/app` — same Calora MVP as before (camera/text scan, edit, history, settings).
-- **API** at `/api/estimate` — Gemini 2.5 Flash + MiniMax fallback, now **rate-limited at 10 req/min and 100 req/hour per IP** (returns 429 with Retry-After).
+- **API** at `/api/estimate` — Gemini 2.5 Flash + MiniMax fallback, rate-limited at 10 req/min + 100 req/hour per IP, returns 429 + Retry-After.
 - **Health** at `/api/health` — returns ok=true, ai_configured=true.
 - **100 unit + integration tests** passing (`npm test`).
+- **Marketing docs:**
+  - `docs/MARKET_ANALYSIS.md` — 22K, 6 competitors with verified data
+  - `docs/BUSINESS_PLAN.md` — 17K, pricing, unit economics, $1k MRR roadmap
 
 ---
 
@@ -81,13 +84,15 @@ The marketing landing page is now live at https://calora.develalfy.me/ (public-f
 17. Added npm scripts: `test`, `test:watch`, `test:coverage`, `typecheck`
 18. Removed duplicate `macroTargets` from page.tsx (single source of truth)
 
-### Phase 4 — Marketing landing page (commit `5a46303`)
+### Phase 4 — Marketing landing page (commits `5a46303`, `4ef6fb6`)
 19. Built `app/page.tsx` — full marketing landing page (hero, 3 steps, 6 features, pricing, FAQ, footer, medical disclaimer)
 20. Moved the existing app to `app/app/page.tsx`
-21. Pricing card for **Free** (5 scans/day, no signup) + **Pro** ("Coming soon" — pending market research)
+21. Pricing card for **Free** (5 scans/day, no signup) + **Pro** ($4.99/mo or $29.99/yr with 7-day free trial)
 22. Zero fake scarcity, zero dark patterns, honest "AI ±20% accurate" disclaimer
 23. Pushed to GitHub, Dokploy auto-rebuilt via webhook
-24. Verified live: landing renders, /app still works, /api/health OK
+24. Wrote `docs/MARKET_ANALYSIS.md` (22K) — verified data on 6 competitors from iTunes Lookup API + App Store reviews RSS + Brave snippets. Specific verified prices: MacroFactor $11.99/$47.99/$71.99, Cal AI $30/yr, MFP $19.99/$79.99 (Premium+) $24.99/$99.99, Lose It! $19.99/$39.99/$59.99 lifetime
+25. Wrote `docs/BUSINESS_PLAN.md` (17K) — unit economics ($0.15/mo AI cost per free user, 85-90% gross margin), $1k MRR path (need ~200 Pro subs or ~6,500 MAU at 3.2% conversion), 30/60/90 day plan
+26. Verified live: $4.99, $29.99, "7-day free trial" all visible on calora.develalfy.me
 2. DESIGN.md full brand system + design tokens in `app/globals.css`
 3. PageHeader, HeroRing, MacroBar, Toast, EmptyState in `components/ui.tsx`
 4. Six screens (home, capture, loading, edit, history, settings, meal-detail) in `app/page.tsx`
@@ -203,10 +208,13 @@ git log --oneline -20 → 5bbfa4e Polish pass: dark mode tokens, undo toast, lon
 
 ```
 cd /home/develalfy/projects/calora
-# 1. Check if market analysis subagent has landed (was re-dispatched ~30min ago)
-ls -la docs/MARKET_ANALYSIS.md 2>/dev/null && wc -l docs/MARKET_ANALYSIS.md
-# 2. If yes, write docs/BUSINESS_PLAN.md from it (pricing tiers, unit econ, $1k MRR path)
-# 3. Update landing page with real Pro pricing
-# 4. Begin Phase 2 — Supabase auth + Postgres schema (or Clerk if Supabase setup is heavy)
-# 5. Add /api/meals endpoint that the client uses once authenticated
+git add -A && git commit -m "Update state doc" && git push origin main
+# Wait for Dokploy rebuild (~40s)
+# Then begin Phase 2:
+# 1. Decide auth provider: Supabase vs Clerk vs NextAuth
+# 2. Postgres schema: users, meals (FK to users), subscriptions (FK to users)
+# 3. /api/meals endpoint (GET/POST/PATCH/DELETE) gated by JWT
+# 4. Stripe Checkout + webhook handler
+# 5. Move meal log from localStorage → server (with offline cache)
+# 6. Privacy policy + Terms of Service live pages (required for Stripe)
 ```
