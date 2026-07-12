@@ -17,13 +17,66 @@ import {
   saveSettings,
   startOfDay,
   sumMacros,
-  updateEntry,
   uuid,
 } from "@/lib/storage";
 import { compressImage } from "@/lib/image";
 import { downloadCSV, exportToCSV } from "@/lib/export";
+import {
+  Button,
+  Card,
+  ConfidenceBadge,
+  EmptyState,
+  IconButton,
+  MacroBar,
+  PageHeader,
+  PillToggle,
+  Wordmark,
+} from "@/components/ui";
+import {
+  IconCamera,
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconClose,
+  IconDownload,
+  IconFlame,
+  IconHistory,
+  IconLeaf,
+  IconPlus,
+  IconSettings,
+  IconSparkle,
+  IconTrash,
+  IconUpload,
+} from "@/components/Icons";
 
-type View = "home" | "capture" | "loading" | "edit" | "history" | "settings";
+// Macro targets (default — derived from goal: 30% P, 40% C, 30% F at 4-4-9 kcal/g).
+function macroTargets(goalCalories: number) {
+  return {
+    protein_g: Math.round((goalCalories * 0.30) / 4),
+    carbs_g: Math.round((goalCalories * 0.40) / 4),
+    fat_g: Math.round((goalCalories * 0.30) / 9),
+  };
+}
+
+const MACRO_PROTEIN = "var(--macro-protein)";
+const MACRO_CARBS = "var(--macro-carbs)";
+const MACRO_FAT = "var(--macro-fat)";
+
+type View =
+  | "home"
+  | "capture"
+  | "loading"
+  | "edit"
+  | "history"
+  | "settings"
+  | "meal-detail";
+
+const MEAL_OPTIONS = [
+  { value: "breakfast", label: "Breakfast" },
+  { value: "lunch", label: "Lunch" },
+  { value: "dinner", label: "Dinner" },
+  { value: "snack", label: "Snack" },
+] as const;
 
 export default function HomePage() {
   const [view, setView] = useState<View>("home");
@@ -31,308 +84,493 @@ export default function HomePage() {
   const [settings, setSettings] = useState({ goalCalories: 2000 });
   const [now, setNow] = useState<number>(() => Date.now());
 
-  // Hydrate from localStorage on mount
   useEffect(() => {
     setLog(loadLog());
     setSettings(loadSettings());
   }, []);
 
-  // Tick once a minute so "today" stays current if user keeps the app open
+  // Tick once a minute so "today" stays current
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);
   }, []);
 
-  const today = useMemo(() => entriesForDay(log, startOfDay(now)), [log, now]);
+  const today = useMemo(
+    () => entriesForDay(log, startOfDay(now)),
+    [log, now],
+  );
   const todayTotals = useMemo(() => sumMacros(today), [today]);
 
+  // Compute streak (consecutive days with at least 1 meal, including today)
+  const streak = useMemo(() => {
+    let count = 0;
+    const oneDay = 86_400_000;
+    const dayStart = startOfDay(now);
+    for (let i = 0; i < 30; i++) {
+      const dayEntries = entriesForDay(log, dayStart - i * oneDay);
+      if (dayEntries.length > 0) count++;
+      else if (i > 0) break;
+    }
+    return count;
+  }, [log, now]);
+
+  const onCapture = () => {
+    sessionStorage.removeItem("calora:pending-estimate");
+    sessionStorage.removeItem("calora:pending-result");
+    setView("capture");
+  };
+
+  const onHome = () => {
+    sessionStorage.removeItem("calora:pending-estimate");
+    sessionStorage.removeItem("calora:pending-result");
+    setView("home");
+  };
+
   return (
-    <main className="mx-auto w-full max-w-md min-h-screen flex flex-col">
-      {view === "home" && (
-        <HomeView
-          today={today}
-          todayTotals={todayTotals}
-          goal={settings.goalCalories}
-          onCapture={() => setView("capture")}
-          onHistory={() => setView("history")}
-          onSettings={() => setView("settings")}
-          onRemove={(id) => setLog(removeEntry(id))}
-        />
-      )}
-      {view === "capture" && (
-        <CaptureView
-          onCancel={() => setView("home")}
-          onEstimate={(req) => {
-            // jump straight to loading — the parent sets pending request
-            sessionStorage.setItem("calora:pending-estimate", JSON.stringify(req));
-            setView("loading");
-          }}
-        />
-      )}
-      {view === "loading" && (
-        <LoadingView
-          onDone={(result) => {
-            sessionStorage.setItem(
-              "calora:pending-result",
-              JSON.stringify(result),
-            );
-            setView("edit");
-          }}
-          onError={() => setView("capture")}
-        />
-      )}
-      {view === "edit" && (
-        <EditView
-          onCancel={() => setView("home")}
-          onSave={(entry) => {
-            setLog(addEntry(entry));
-            setView("home");
-          }}
-        />
-      )}
-      {view === "history" && (
-        <HistoryView
-          log={log}
-          onBack={() => setView("home")}
-          onRemove={(id) => setLog(removeEntry(id))}
-        />
-      )}
-      {view === "settings" && (
-        <SettingsView
-          settings={settings}
-          onSave={(s) => {
-            saveSettings(s);
-            setSettings(s);
-            setView("home");
-          }}
-          onBack={() => setView("home")}
-        />
-      )}
+    <main className="mx-auto w-full max-w-md min-h-[100dvh] flex flex-col bg-[var(--canvas)]">
+      <div
+        key={view}
+        className={view === "home" ? "flex-1 flex flex-col" : "page-forward flex-1 flex flex-col"}
+      >
+        {view === "home" && (
+          <HomeView
+            today={today}
+            todayTotals={todayTotals}
+            goal={settings.goalCalories}
+            streak={streak}
+            onCapture={onCapture}
+            onHistory={() => setView("history")}
+            onSettings={() => setView("settings")}
+            onRemove={(id) => setLog(removeEntry(id))}
+            onOpenMeal={(id) => {
+              sessionStorage.setItem("calora:open-meal-id", id);
+              setView("meal-detail");
+            }}
+          />
+        )}
+        {view === "capture" && (
+          <CaptureView
+            onCancel={onHome}
+            onEstimate={(req) => {
+              sessionStorage.setItem(
+                "calora:pending-estimate",
+                JSON.stringify(req),
+              );
+              setView("loading");
+            }}
+            recentEntries={log.slice(0, 5)}
+          />
+        )}
+        {view === "loading" && (
+          <LoadingView
+            onDone={(result) => {
+              sessionStorage.setItem(
+                "calora:pending-result",
+                JSON.stringify(result),
+              );
+              setView("edit");
+            }}
+            onError={onHome}
+          />
+        )}
+        {view === "edit" && (
+          <EditView
+            onCancel={() => setView("capture")}
+            onSave={(entry) => {
+              setLog(addEntry(entry));
+              onHome();
+            }}
+          />
+        )}
+        {view === "history" && (
+          <HistoryView
+            log={log}
+            onBack={onHome}
+            onRemove={(id) => setLog(removeEntry(id))}
+          />
+        )}
+        {view === "settings" && (
+          <SettingsView
+            settings={settings}
+            onSave={(s) => {
+              saveSettings(s);
+              setSettings(s);
+              setView("home");
+            }}
+            onBack={onHome}
+          />
+        )}
+        {view === "meal-detail" && (
+          <MealDetailView
+            log={log}
+            onBack={onHome}
+            onRemove={(id) => {
+              setLog(removeEntry(id));
+              onHome();
+            }}
+          />
+        )}
+      </div>
     </main>
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Home view — today's log + ring + big CTA
-// ──────────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════════
+// HOME VIEW
+// ════════════════════════════════════════════════════════════════════════════════
+
 function HomeView({
   today,
   todayTotals,
   goal,
+  streak,
   onCapture,
   onHistory,
   onSettings,
   onRemove,
+  onOpenMeal,
 }: {
   today: MealEntry[];
   todayTotals: Macros;
   goal: number;
+  streak: number;
   onCapture: () => void;
   onHistory: () => void;
   onSettings: () => void;
   onRemove: (id: string) => void;
+  onOpenMeal: (id: string) => void;
 }) {
-  const pct = Math.min(100, Math.round((todayTotals.calories / goal) * 100));
-  const remaining = Math.max(0, goal - todayTotals.calories);
+  const targets = macroTargets(goal);
+  const consumed = todayTotals.calories;
+  const remaining = Math.max(0, goal - consumed);
+  const pct = Math.min(100, Math.round((consumed / Math.max(1, goal)) * 100));
+  const overshoot = consumed > goal;
+
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 11 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <div className="flex-1 flex flex-col p-4 gap-4">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Calora</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={onHistory}
-            className="px-3 py-1.5 rounded-full text-sm bg-zinc-200 dark:bg-zinc-800"
-          >
+    <>
+      {/* ───── Top bar ───── */}
+      <header className="px-5 pt-6 pb-3 flex items-center justify-between">
+        <Wordmark />
+        <div className="flex items-center gap-1">
+          <Button variant="secondary" size="sm" onClick={onHistory}>
+            <IconHistory size={16} />
             History
-          </button>
-          <button
-            onClick={onSettings}
-            className="px-3 py-1.5 rounded-full text-sm bg-zinc-200 dark:bg-zinc-800"
-          >
-            Goal
-          </button>
+          </Button>
+          <IconButton label="Settings" onClick={onSettings}>
+            <IconSettings size={20} />
+          </IconButton>
         </div>
       </header>
 
-      <RingProgress percent={pct} value={todayTotals.calories} goal={goal} />
-
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <Macro label="Protein" value={`${todayTotals.protein_g}g`} />
-        <Macro label="Carbs" value={`${todayTotals.carbs_g}g`} />
-        <Macro label="Fat" value={`${todayTotals.fat_g}g`} />
-      </div>
-
-      {remaining > 0 ? (
-        <p className="text-center text-sm text-zinc-500">
-          {remaining} kcal remaining today
+      {/* ───── Hero / greeting + ring ───── */}
+      <section className="px-5 pb-2">
+        <p className="text-[13px] text-[var(--ink-muted)] mb-3">
+          {greeting}. {today.length === 0
+            ? "Let's start with today's first meal."
+            : "Here's where you are today."}
         </p>
-      ) : (
-        <p className="text-center text-sm text-emerald-600">
-          Daily goal hit 🎉
-        </p>
-      )}
 
-      <button
-        onClick={onCapture}
-        className="mt-4 w-full py-4 rounded-2xl bg-emerald-500 text-white font-semibold text-lg shadow-lg active:scale-95 transition"
-      >
-        + Log a meal
-      </button>
+        <HeroRing
+          value={consumed}
+          goal={goal}
+          remaining={remaining}
+          pct={pct}
+          overshoot={overshoot}
+        />
 
-      <div className="flex-1 mt-4">
-        <h2 className="text-sm font-medium text-zinc-500 mb-2">
-          Today ({today.length})
-        </h2>
+        {/* Macro bars */}
+        <div className="mt-7 space-y-3">
+          <MacroBar
+            name="Protein"
+            value={todayTotals.protein_g}
+            target={targets.protein_g}
+            color={MACRO_PROTEIN}
+          />
+          <MacroBar
+            name="Carbs"
+            value={todayTotals.carbs_g}
+            target={targets.carbs_g}
+            color={MACRO_CARBS}
+          />
+          <MacroBar
+            name="Fat"
+            value={todayTotals.fat_g}
+            target={targets.fat_g}
+            color={MACRO_FAT}
+          />
+        </div>
+
+        {/* Primary CTA */}
+        <Button
+          variant="primary"
+          size="lg"
+          full
+          className="mt-7"
+          onClick={onCapture}
+        >
+          <IconCamera size={20} />
+          Log a meal
+        </Button>
+
+        {streak >= 2 && (
+          <div className="mt-3 flex items-center justify-center gap-1.5 text-[12px] text-[var(--ink-muted)]">
+            <span className="text-[var(--accent)]">●</span>
+            <span>
+              <span className="font-semibold tabular text-[var(--ink-soft)]">{streak}</span>
+              {" "}day streak
+            </span>
+          </div>
+        )}
+      </section>
+
+      {/* ───── Today's meals ───── */}
+      <section className="flex-1 px-5 pt-6 pb-8">
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="font-[family-name:var(--font-display)] text-[20px] font-semibold tracking-tight">
+            Today
+          </h2>
+          <span className="text-[12px] tabular text-[var(--ink-muted)]">
+            {today.length} {today.length === 1 ? "meal" : "meals"}
+          </span>
+        </div>
+
         {today.length === 0 ? (
-          <p className="text-sm text-zinc-400 italic">
-            Nothing logged yet. Snap your first meal above.
-          </p>
+          <EmptyState
+            icon={<IconLeaf size={22} />}
+            title="No meals yet today"
+            description="Snap a photo or describe what you ate — your progress rolls up here."
+            action={
+              <Button variant="primary" onClick={onCapture}>
+                <IconCamera size={18} /> Log your first meal
+              </Button>
+            }
+          />
         ) : (
-          <ul className="flex flex-col gap-2">
-            {today
-              .slice()
+          <ul className="space-y-2">
+            {[...today]
               .sort((a, b) => b.loggedAt - a.loggedAt)
               .map((e) => (
-                <MealRow key={e.id} entry={e} onRemove={() => onRemove(e.id)} />
+                <MealCard
+                  key={e.id}
+                  entry={e}
+                  onOpen={() => onOpenMeal(e.id)}
+                  onRemove={() => onRemove(e.id)}
+                />
               ))}
           </ul>
+        )}
+      </section>
+
+      {/* ───── Bottom disclaimer ───── */}
+      <footer className="px-5 pt-4 pb-6 text-center text-[11px] text-[var(--ink-muted)] leading-relaxed border-t border-[var(--hairline-soft)]">
+        AI estimates are approximate — edit anything that looks wrong.
+        <br />
+        Calora is not a medical device.
+      </footer>
+    </>
+  );
+}
+
+function HeroRing({
+  value,
+  goal,
+  remaining,
+  pct,
+  overshoot,
+}: {
+  value: number;
+  goal: number;
+  remaining: number;
+  pct: number;
+  overshoot: boolean;
+}) {
+  const r = 78;
+  const c = 2 * Math.PI * r;
+  const offset = c - (pct / 100) * c;
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden>
+        <defs>
+          <linearGradient id="heroGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--accent)" />
+            <stop offset="100%" stopColor="#ff8a5b" />
+          </linearGradient>
+        </defs>
+        <circle
+          cx="100"
+          cy="100"
+          r={r}
+          fill="none"
+          stroke="var(--surface-strong)"
+          strokeWidth="14"
+        />
+        <circle
+          cx="100"
+          cy="100"
+          r={r}
+          fill="none"
+          stroke={overshoot ? "var(--warning)" : "url(#heroGrad)"}
+          strokeWidth="14"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          transform="rotate(-90 100 100)"
+          style={{ transition: "stroke-dashoffset 700ms cubic-bezier(0.22, 1, 0.36, 1)" }}
+        />
+      </svg>
+      <div className="-mt-[124px] text-center">
+        <div className="font-[family-name:var(--font-display)] text-[44px] leading-none font-semibold tabular tracking-tight text-[var(--ink)]">
+          {value.toLocaleString()}
+        </div>
+        <div className="text-[12px] text-[var(--ink-muted)] tabular mt-1">
+          of {goal.toLocaleString()} kcal
+        </div>
+      </div>
+      <div className="mt-3 text-[13px] font-medium text-center">
+        {overshoot ? (
+          <span style={{ color: "var(--warning)" }}>
+            +{(consumed_overshoot(goal, value)).toLocaleString()} over today
+          </span>
+        ) : consumedInRange(goal, value) ? (
+          <span className="text-[var(--ink-muted)]">
+            {(goal - value).toLocaleString()} kcal left
+          </span>
+        ) : (
+          <span className="text-[var(--success)]">Goal hit · nice</span>
         )}
       </div>
     </div>
   );
 }
 
-function Macro({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3">
-      <div className="text-xs text-zinc-500">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
-    </div>
-  );
+function consumed_overshoot(goal: number, value: number): number {
+  return Math.max(0, value - goal);
+}
+function consumedInRange(goal: number, value: number): boolean {
+  return value > 0 && value < goal;
 }
 
-function MealRow({
+function MealCard({
   entry,
+  onOpen,
   onRemove,
 }: {
   entry: MealEntry;
+  onOpen: () => void;
   onRemove: () => void;
 }) {
   const time = new Date(entry.loggedAt).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
-  const label = entry.items.map((i) => i.name).join(", ");
+  const summary =
+    entry.items.length === 1
+      ? entry.items[0].name
+      : entry.items.length === 0
+        ? "No items"
+        : `${entry.items.length} items`;
+
   return (
-    <li className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 flex justify-between items-start gap-2">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <span>{time}</span>
-          <span className="capitalize">{entry.meal}</span>
-          <span>·</span>
-          <span>{entry.source === "photo" ? "📷" : "✏️"}</span>
-        </div>
-        <div className="text-sm truncate">{label || "Untitled"}</div>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="font-semibold tabular-nums">
-          {entry.totals.calories}
-        </span>
-        <button
-          onClick={onRemove}
-          className="text-xs text-zinc-400 hover:text-red-500"
-          aria-label="Delete"
+    <li>
+      <Card
+        className="p-3 flex gap-3 items-center cursor-pointer active:scale-[0.99] transition"
+        onClick={onOpen}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+      >
+        {/* Thumbnail or fallback */}
+        <div
+          className="w-12 h-12 rounded-[12px] shrink-0 overflow-hidden bg-[var(--surface-soft)] flex items-center justify-center text-[20px]"
+          aria-hidden
         >
-          ✕
-        </button>
-      </div>
+          {entry.imageDataUrl ? (
+            <img
+              src={entry.imageDataUrl}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="text-[var(--ink-muted)]">
+              {entry.source === "photo" ? <IconCamera size={20} /> : <IconLeaf size={20} />}
+            </span>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]">
+            <span className="tabular">{time}</span>
+            <span>·</span>
+            <span className="capitalize">{entry.meal}</span>
+          </div>
+          <div className="text-[14px] font-medium text-[var(--ink)] truncate mt-0.5">
+            {summary}
+          </div>
+          <div className="text-[11px] tabular text-[var(--ink-muted)] mt-1">
+            P{entry.totals.protein_g}g · C{entry.totals.carbs_g}g · F
+            {entry.totals.fat_g}g
+          </div>
+        </div>
+
+        <div className="flex flex-col items-end gap-1">
+          <span className="font-semibold text-[15px] tabular text-[var(--ink)]">
+            {entry.totals.calories}
+          </span>
+          <span className="text-[10px] text-[var(--ink-muted)] -mt-0.5">kcal</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm("Remove this meal?")) onRemove();
+            }}
+            className="mt-1 text-[var(--ink-muted)] hover:text-[var(--danger)] transition"
+            aria-label="Remove meal"
+          >
+            <IconClose size={16} />
+          </button>
+        </div>
+      </Card>
     </li>
   );
 }
 
-function RingProgress({
-  percent,
-  value,
-  goal,
-}: {
-  percent: number;
-  value: number;
-  goal: number;
-}) {
-  const r = 70;
-  const c = 2 * Math.PI * r;
-  const offset = c - (percent / 100) * c;
-  return (
-    <div className="flex justify-center my-4">
-      <svg width="180" height="180" viewBox="0 0 180 180">
-        <circle
-          cx="90"
-          cy="90"
-          r={r}
-          fill="none"
-          stroke="currentColor"
-          className="text-zinc-200 dark:text-zinc-800"
-          strokeWidth="14"
-        />
-        <circle
-          cx="90"
-          cy="90"
-          r={r}
-          fill="none"
-          stroke="#10b981"
-          strokeWidth="14"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={offset}
-          transform="rotate(-90 90 90)"
-          style={{ transition: "stroke-dashoffset 0.6s ease" }}
-        />
-        <text
-          x="90"
-          y="86"
-          textAnchor="middle"
-          className="fill-zinc-900 dark:fill-zinc-50"
-          fontSize="28"
-          fontWeight="700"
-        >
-          {value}
-        </text>
-        <text
-          x="90"
-          y="108"
-          textAnchor="middle"
-          className="fill-zinc-500"
-          fontSize="13"
-        >
-          of {goal} kcal
-        </text>
-      </svg>
-    </div>
-  );
-}
+// ════════════════════════════════════════════════════════════════════════════════
+// CAPTURE VIEW
+// ════════════════════════════════════════════════════════════════════════════════
 
-// ──────────────────────────────────────────────────────────────────────────
-// Capture view — photo or text entry
-// ──────────────────────────────────────────────────────────────────────────
 function CaptureView({
   onCancel,
   onEstimate,
+  recentEntries,
 }: {
   onCancel: () => void;
-  onEstimate: (req: { image?: string; text?: string; meal: MealType }) => void;
+  onEstimate: (req: {
+    image?: string;
+    text?: string;
+    meal: MealType;
+  }) => void;
+  recentEntries: MealEntry[];
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const [meal, setMeal] = useState<MealType>("lunch");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   const handleFile = async (file: File) => {
     setErr(null);
     setBusy(true);
     try {
-      // Guard: too-large files are almost certainly going to OOM the canvas or fail to base64 in sessionStorage
       const MAX_MB = 30;
       if (file.size > MAX_MB * 1024 * 1024) {
         throw new Error(
@@ -340,12 +578,17 @@ function CaptureView({
         );
       }
       const dataUrl = await compressImage(file, 1024, 0.82);
-      onEstimate({ image: dataUrl, meal });
+      setPhotoPreview(dataUrl);
     } catch (e) {
-      setErr(`Could not process image: ${(e as Error).message}`);
+      setErr((e as Error).message);
     } finally {
       setBusy(false);
     }
+  };
+
+  const submitPhoto = () => {
+    if (!photoPreview) return;
+    onEstimate({ image: photoPreview, meal });
   };
 
   const handleText = () => {
@@ -354,87 +597,220 @@ function CaptureView({
     onEstimate({ text: t, meal });
   };
 
+  // Text suggestions derived from last 5 meals' item names
+  const suggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const e of recentEntries) {
+      const label = e.items.map((i) => i.name).join(", ");
+      if (label && !seen.has(label)) {
+        seen.add(label);
+        out.push(label);
+      }
+      if (out.length >= 3) break;
+    }
+    return out;
+  }, [recentEntries]);
+
+  const EXAMPLES = [
+    "chicken caesar salad, large",
+    "2 chapatis with dal tadka",
+    "oat latte + croissant",
+  ];
+
   return (
-    <div className="flex-1 flex flex-col p-4 gap-4">
-      <div className="flex items-center justify-between">
-        <button onClick={onCancel} className="text-sm text-zinc-500">
-          ← Cancel
-        </button>
-        <h1 className="font-semibold">Log a meal</h1>
-        <div className="w-12" />
-      </div>
+    <>
+      <PageHeader
+        back={
+          <IconButton label="Back" onClick={onCancel}>
+            <IconChevronLeft size={20} />
+          </IconButton>
+        }
+        title="Log a meal"
+        subtitle="Photo or text works. AI reads it in about 5 seconds."
+        right={
+          <PillToggle
+            options={MEAL_OPTIONS}
+            value={meal}
+            onChange={setMeal}
+            ariaLabel="Meal type"
+          />
+        }
+      />
 
-      <div className="flex gap-1.5 overflow-x-auto">
-        {(["breakfast", "lunch", "dinner", "snack"] as const).map((m) => (
+      {/* ───── Primary: photo ───── */}
+      <section className="px-5 pb-4">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+          className="hidden"
+        />
+
+        {photoPreview ? (
+          <Card className="overflow-hidden">
+            <img
+              src={photoPreview}
+              alt="preview"
+              className="w-full max-h-[280px] object-cover"
+            />
+            <div className="p-3 flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPhotoPreview(null)}
+              >
+                <IconClose size={16} /> Discard
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                full
+                onClick={submitPhoto}
+              >
+                <IconSparkle size={16} /> Estimate from this photo
+              </Button>
+            </div>
+          </Card>
+        ) : (
           <button
-            key={m}
-            onClick={() => setMeal(m)}
-            className={`px-3 py-1.5 rounded-full text-sm capitalize whitespace-nowrap ${
-              meal === m
-                ? "bg-emerald-500 text-white"
-                : "bg-zinc-200 dark:bg-zinc-800"
-            }`}
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+            className={[
+              "w-full aspect-[4/3] rounded-[20px] border-2 border-dashed",
+              "border-[var(--accent)] bg-[var(--accent-soft)]",
+              "flex flex-col items-center justify-center gap-2",
+              "active:scale-[0.99] transition",
+              "disabled:opacity-50",
+            ].join(" ")}
           >
-            {m}
+            {busy ? (
+              <>
+                <div className="w-8 h-8 border-[3px] border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+                <span className="text-[14px] font-medium text-[var(--accent-hover)]">
+                  Reading your photo…
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="w-12 h-12 rounded-full bg-[var(--surface-card)] flex items-center justify-center text-[var(--accent)] shadow-sm">
+                  <IconCamera size={24} />
+                </div>
+                <span className="text-[15px] font-semibold text-[var(--ink)]">
+                  Snap or upload a photo
+                </span>
+                <span className="text-[12px] text-[var(--ink-muted)]">
+                  Camera opens on mobile. Files on desktop.
+                </span>
+              </>
+            )}
           </button>
-        ))}
+        )}
+
+        {err && (
+          <p className="mt-3 text-[12px] text-[var(--danger)]">{err}</p>
+        )}
+      </section>
+
+      {/* ───── Divider ───── */}
+      <div className="px-5 my-4 flex items-center gap-3 text-[11px] uppercase tracking-[0.1em] text-[var(--ink-muted)]">
+        <div className="flex-1 h-px bg-[var(--hairline)]" />
+        or describe it
+        <div className="flex-1 h-px bg-[var(--hairline)]" />
       </div>
 
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) handleFile(f);
-        }}
-        className="hidden"
-      />
+      {/* ───── Secondary: text ───── */}
+      <section className="px-5 pb-5">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="e.g. 2 scrambled eggs with butter and toast"
+          rows={3}
+          className={[
+            "w-full p-3.5 rounded-[16px] resize-none",
+            "bg-[var(--surface-card)] border border-[var(--hairline)]",
+            "text-[14px] leading-relaxed text-[var(--ink)]",
+            "placeholder:text-[var(--ink-muted)]",
+            "focus:outline-none focus:border-[var(--accent)] focus:ring-4 focus:ring-[var(--accent-soft)]",
+            "transition",
+          ].join(" ")}
+        />
 
-      <button
-        disabled={busy}
-        onClick={() => fileRef.current?.click()}
-        className="w-full py-12 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-center active:scale-95 transition disabled:opacity-50"
-      >
-        <div className="text-3xl mb-2">📷</div>
-        <div className="font-medium">
-          {busy ? "Processing…" : "Snap or upload a photo"}
-        </div>
-        <div className="text-xs text-zinc-500 mt-1">
-          AI will estimate calories in ~5s
-        </div>
-      </button>
+        {/* Suggestion chips: recent dupes */}
+        {suggestions.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] mb-1.5">
+              Repeat a recent meal
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  onClick={() => setText(s)}
+                  className={[
+                    "shrink-0 max-w-[200px] truncate",
+                    "px-3 py-1.5 rounded-full text-[12px]",
+                    "bg-[var(--surface-soft)] text-[var(--ink-soft)]",
+                    "hover:bg-[var(--surface-strong)] active:scale-95 transition",
+                  ].join(" ")}
+                  title={s}
+                >
+                  ↻ {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-      <div className="flex items-center gap-2 text-zinc-400 text-xs">
-        <div className="flex-1 h-px bg-zinc-300 dark:bg-zinc-700" />
-        OR
-        <div className="flex-1 h-px bg-zinc-300 dark:bg-zinc-700" />
-      </div>
+        {/* Examples for first-timers */}
+        {suggestions.length === 0 && (
+          <div className="mt-3">
+            <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] mb-1.5">
+              Try one of these
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {EXAMPLES.map((ex) => (
+                <button
+                  key={ex}
+                  onClick={() => setText(ex)}
+                  className={[
+                    "px-3 py-1.5 rounded-full text-[12px]",
+                    "bg-[var(--surface-soft)] text-[var(--ink-soft)]",
+                    "hover:bg-[var(--surface-strong)] active:scale-95 transition",
+                  ].join(" ")}
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="e.g. 2 scrambled eggs with butter on toast"
-        rows={3}
-        className="w-full p-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 resize-none"
-      />
-      <button
-        onClick={handleText}
-        disabled={!text.trim()}
-        className="w-full py-3 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-medium disabled:opacity-40"
-      >
-        Estimate from text
-      </button>
-
-      {err && <p className="text-sm text-red-500">{err}</p>}
-    </div>
+        <Button
+          variant="primary"
+          size="lg"
+          full
+          className="mt-5"
+          disabled={!text.trim()}
+          onClick={handleText}
+        >
+          <IconSparkle size={16} />
+          Estimate from text
+        </Button>
+      </section>
+    </>
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Loading view — calls API, retries once on transient failure
-// ──────────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════════
+// LOADING VIEW
+// ════════════════════════════════════════════════════════════════════════════════
+
 function LoadingView({
   onDone,
   onError,
@@ -443,11 +819,23 @@ function LoadingView({
   onError: () => void;
 }) {
   const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  const STAGES = [
+    "Reading your photo…",
+    "Identifying foods…",
+    "Estimating portions…",
+    "Almost done…",
+  ];
 
   useEffect(() => {
-    let cancelled = false;
-    const tick = setInterval(() => setProgress((p) => Math.min(90, p + 8)), 200);
+    const stageInterval = setInterval(() => {
+      setStage((s) => Math.min(STAGES.length - 1, s + 1));
+    }, 1500);
+    const tick = setInterval(
+      () => setProgress((p) => Math.min(95, p + 4)),
+      120,
+    );
 
     const run = async () => {
       const raw = sessionStorage.getItem("calora:pending-estimate");
@@ -480,28 +868,26 @@ function LoadingView({
           if (attempt < 1) return tryOnce(attempt + 1);
           throw new Error("Malformed response");
         }
-        if (cancelled) return;
         sessionStorage.removeItem("calora:pending-estimate");
         onDone(data as EstimateResult);
       };
 
       try {
         await tryOnce(0);
+        setProgress(100);
       } catch (e) {
-        if (!cancelled) {
-          setErr((e as Error).message);
-          setProgress(100);
-        }
+        setErr((e as Error).message);
+        setProgress(100);
       } finally {
         clearInterval(tick);
-        if (!cancelled) setProgress(100);
+        clearInterval(stageInterval);
       }
     };
 
     void run();
     return () => {
-      cancelled = true;
       clearInterval(tick);
+      clearInterval(stageInterval);
     };
   }, [onDone]);
 
@@ -509,38 +895,72 @@ function LoadingView({
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
       {err ? (
         <>
-          <div className="text-4xl mb-3">⚠️</div>
-          <p className="text-zinc-600 dark:text-zinc-400 mb-6">
-            Couldn&apos;t get an estimate: {err}
+          <div className="w-14 h-14 rounded-full bg-[var(--danger-soft)] text-[var(--danger)] flex items-center justify-center mb-4">
+            <IconClose size={26} />
+          </div>
+          <h2 className="font-[family-name:var(--font-display)] text-[20px] font-semibold mb-1">
+            Something went wrong
+          </h2>
+          <p className="text-[13px] text-[var(--ink-muted)] max-w-[280px] mb-6">
+            {err}
           </p>
-          <button
-            onClick={onError}
-            className="px-6 py-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
-          >
-            Try again
-          </button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onError}>
+              Try again
+            </Button>
+          </div>
         </>
       ) : (
         <>
-          <div className="w-12 h-12 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin mb-6" />
-          <p className="text-zinc-600 dark:text-zinc-400">
-            Analyzing your meal…
-          </p>
-          <div className="w-48 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full mt-4 overflow-hidden">
-            <div
-              className="h-full bg-emerald-500 transition-all"
-              style={{ width: `${progress}%` }}
-            />
+          <div className="relative w-20 h-20 mb-6">
+            <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
+              <circle
+                cx="40"
+                cy="40"
+                r="34"
+                fill="none"
+                stroke="var(--surface-strong)"
+                strokeWidth="6"
+              />
+              <circle
+                cx="40"
+                cy="40"
+                r="34"
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="6"
+                strokeLinecap="round"
+                strokeDasharray={2 * Math.PI * 34}
+                strokeDashoffset={
+                  2 * Math.PI * 34 - (progress / 100) * 2 * Math.PI * 34
+                }
+                style={{
+                  transition:
+                    "stroke-dashoffset 120ms cubic-bezier(0.22, 1, 0.36, 1)",
+                }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center text-[var(--accent)]">
+              <IconSparkle size={28} />
+            </div>
           </div>
+
+          <p className="text-[15px] font-medium text-[var(--ink)] mb-1">
+            {STAGES[stage]}
+          </p>
+          <p className="text-[12px] text-[var(--ink-muted)]">
+            Usually takes 3–10 seconds
+          </p>
         </>
       )}
     </div>
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Edit view — adjust items/portions before saving
-// ──────────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════════
+// EDIT / RESULT VIEW
+// ════════════════════════════════════════════════════════════════════════════════
+
 function EditView({
   onCancel,
   onSave,
@@ -557,20 +977,25 @@ function EditView({
     const reqRaw = sessionStorage.getItem("calora:pending-estimate");
     if (raw) setResult(JSON.parse(raw));
     if (reqRaw) {
-      const req = JSON.parse(reqRaw) as {
-        image?: string;
-        text?: string;
-        meal: MealType;
-      };
-      setMeal(req.meal);
-      setPendingImage(req.image);
+      try {
+        const req = JSON.parse(reqRaw) as {
+          image?: string;
+          text?: string;
+          meal: MealType;
+        };
+        setMeal(req.meal);
+        setPendingImage(req.image);
+      } catch {}
     }
   }, []);
 
   if (!result) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-zinc-500">No result to edit</p>
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <p className="text-[15px] text-[var(--ink)] mb-3">No result to edit.</p>
+        <Button variant="secondary" onClick={onCancel}>
+          Back
+        </Button>
       </div>
     );
   }
@@ -592,116 +1017,131 @@ function EditView({
   const addItem = () => {
     const items = [
       ...result.items,
-      { name: "new item", calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+      { name: "New item", calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
     ];
     const totals = sumMacrosHelper(items);
     setResult({ ...result, items, totals });
   };
 
   return (
-    <div className="flex-1 flex flex-col p-4 gap-3">
-      <div className="flex items-center justify-between">
-        <button onClick={onCancel} className="text-sm text-zinc-500">
-          ← Discard
-        </button>
-        <span
-          className={`text-xs px-2 py-1 rounded-full ${
-            result.confidence === "high"
-              ? "bg-emerald-100 text-emerald-700"
-              : result.confidence === "medium"
-                ? "bg-amber-100 text-amber-700"
-                : "bg-red-100 text-red-700"
-          }`}
-        >
-          {result.confidence} confidence · AI estimate
-        </span>
-      </div>
+    <>
+      <PageHeader
+        back={
+          <IconButton label="Discard" onClick={onCancel}>
+            <IconClose size={20} />
+          </IconButton>
+        }
+        title="Review estimate"
+        right={
+          <ConfidenceBadge level={result.confidence} />
+        }
+      />
 
-      {pendingImage && (
-        <img
-          src={pendingImage}
-          alt="meal"
-          className="w-full max-h-48 object-cover rounded-xl"
-        />
-      )}
-
-      <div className="flex gap-1.5 overflow-x-auto">
-        {(["breakfast", "lunch", "dinner", "snack"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMeal(m)}
-            className={`px-3 py-1.5 rounded-full text-sm capitalize whitespace-nowrap ${
-              meal === m
-                ? "bg-emerald-500 text-white"
-                : "bg-zinc-200 dark:bg-zinc-800"
-            }`}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 flex flex-col gap-2">
-        {result.items.length === 0 ? (
-          <p className="text-sm text-zinc-500 italic">
-            AI couldn&apos;t identify items. Add them manually:
-          </p>
-        ) : (
-          result.items.map((it, i) => (
-            <ItemRow
-              key={i}
-              item={it}
-              onChange={(p) => updateItem(i, p)}
-              onRemove={() => removeItem(i)}
+      <div className="px-5 flex-1 pb-32">
+        {pendingImage && (
+          <Card className="overflow-hidden mb-4">
+            <img
+              src={pendingImage}
+              alt="meal"
+              className="w-full max-h-[200px] object-cover"
             />
-          ))
+          </Card>
         )}
-        <button
-          onClick={addItem}
-          className="self-start text-sm text-emerald-600 px-2 py-1"
-        >
-          + Add item
-        </button>
+
+        {/* Meal type pills */}
+        <div className="mb-4">
+          <PillToggle
+            options={MEAL_OPTIONS}
+            value={meal}
+            onChange={setMeal}
+            ariaLabel="Meal type"
+          />
+        </div>
+
+        {/* Items */}
+        <div className="space-y-2">
+          {result.items.length === 0 ? (
+            <Card className="p-5 text-center">
+              <p className="text-[14px] text-[var(--ink-muted)] mb-3">
+                The AI couldn&apos;t identify items. Add them manually.
+              </p>
+              <Button variant="primary" size="sm" onClick={addItem}>
+                <IconPlus size={14} /> Add first item
+              </Button>
+            </Card>
+          ) : (
+            result.items.map((it, i) => (
+              <ItemRow
+                key={i}
+                item={it}
+                onChange={(p) => updateItem(i, p)}
+                onRemove={() => removeItem(i)}
+              />
+            ))
+          )}
+
+          {result.items.length > 0 && (
+            <button
+              onClick={addItem}
+              className="text-[13px] text-[var(--ink-muted)] hover:text-[var(--accent)] px-2 py-2 transition flex items-center gap-1"
+            >
+              <IconPlus size={14} /> Add item
+            </button>
+          )}
+        </div>
+
+        {result.notes && (
+          <div className="mt-4 px-3 py-2 rounded-[12px] bg-[var(--surface-soft)] text-[12px] text-[var(--ink-soft)] italic">
+            {result.notes}
+          </div>
+        )}
       </div>
 
-      {result.notes && (
-        <p className="text-xs text-zinc-500 italic">📝 {result.notes}</p>
-      )}
-
-      <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-4 bg-gradient-to-t from-zinc-50 dark:from-zinc-950">
-        <div className="flex justify-between items-end mb-3">
-          <div>
-            <div className="text-xs text-zinc-500">Total</div>
-            <div className="text-3xl font-bold tabular-nums">
-              {result.totals.calories}{" "}
-              <span className="text-sm font-normal text-zinc-500">kcal</span>
+      {/* Sticky footer with total + save */}
+      <div className="sticky bottom-0 left-0 right-0 px-5 pt-4 pb-[max(20px,env(safe-area-inset-bottom))] bg-gradient-to-t from-[var(--canvas)] via-[var(--canvas)] to-transparent">
+        <Card className="p-4 backdrop-blur-md bg-[var(--surface-card)]/95">
+          <div className="flex items-end justify-between mb-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)]">
+                Total
+              </div>
+              <div className="font-[family-name:var(--font-display)] text-[34px] font-semibold tabular leading-none tracking-tight">
+                {result.totals.calories.toLocaleString()}
+                <span className="text-[14px] font-normal text-[var(--ink-muted)] ml-1.5">
+                  kcal
+                </span>
+              </div>
+            </div>
+            <div className="text-right text-[11px] tabular text-[var(--ink-muted)] leading-tight">
+              <div>P {result.totals.protein_g}g</div>
+              <div>C {result.totals.carbs_g}g</div>
+              <div>F {result.totals.fat_g}g</div>
             </div>
           </div>
-          <div className="text-right text-xs text-zinc-500">
-            P {result.totals.protein_g}g · C {result.totals.carbs_g}g · F{" "}
-            {result.totals.fat_g}g
-          </div>
-        </div>
-        <button
-          onClick={() =>
-            onSave({
-              id: uuid(),
-              loggedAt: Date.now(),
-              meal,
-              items: result.items,
-              totals: result.totals,
-              source: pendingImage ? "photo" : "text",
-              imageDataUrl: pendingImage,
-              notes: result.notes,
-            })
-          }
-          disabled={result.items.length === 0}
-          className="w-full py-4 rounded-2xl bg-emerald-500 text-white font-semibold text-lg shadow-lg active:scale-95 transition disabled:opacity-40"
-        >
-          Save to today
-        </button>
+          <Button
+            variant="primary"
+            size="lg"
+            full
+            disabled={result.items.length === 0 || result.totals.calories === 0}
+            onClick={() =>
+              onSave({
+                id: uuid(),
+                loggedAt: Date.now(),
+                meal,
+                items: result.items,
+                totals: result.totals,
+                source: pendingImage ? "photo" : "text",
+                imageDataUrl: pendingImage,
+                notes: result.notes,
+              })
+            }
+          >
+            <IconCheck size={18} />
+            Save to today
+          </Button>
+        </Card>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -715,34 +1155,61 @@ function ItemRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3">
-      <div className="flex justify-between items-start gap-2">
+    <Card className="p-3">
+      <div className="flex items-start gap-2">
         <input
           value={item.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          className="flex-1 bg-transparent text-sm font-medium outline-none"
+          aria-label="Item name"
+          className="flex-1 bg-transparent text-[14px] font-medium outline-none placeholder:text-[var(--ink-muted)] min-w-0"
         />
-        <input
-          type="number"
-          value={item.calories}
-          onChange={(e) =>
-            onChange({ calories: Math.max(0, parseInt(e.target.value) || 0) })
-          }
-          className="w-16 text-right tabular-nums bg-transparent text-sm font-semibold outline-none"
-        />
-        <button
-          onClick={onRemove}
-          className="text-zinc-400 hover:text-red-500 text-sm"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <input
+            type="number"
+            value={item.calories}
+            onChange={(e) =>
+              onChange({
+                calories: Math.max(0, parseInt(e.target.value) || 0),
+              })
+            }
+            aria-label="Calories"
+            className="w-[64px] text-right tabular text-[14px] font-semibold bg-transparent outline-none"
+          />
+          <button
+            onClick={onRemove}
+            className="text-[var(--ink-muted)] hover:text-[var(--danger)] transition"
+            aria-label="Remove item"
+          >
+            <IconClose size={16} />
+          </button>
+        </div>
       </div>
-      <div className="flex gap-2 mt-2 text-xs text-zinc-500">
-        <span>P {item.protein_g}g</span>
-        <span>C {item.carbs_g}g</span>
-        <span>F {item.fat_g}g</span>
+      <div className="flex gap-1.5 mt-2">
+        <MicroMacroPill color={MACRO_PROTEIN} label="P" value={item.protein_g} />
+        <MicroMacroPill color={MACRO_CARBS} label="C" value={item.carbs_g} />
+        <MicroMacroPill color={MACRO_FAT} label="F" value={item.fat_g} />
       </div>
-    </div>
+    </Card>
+  );
+}
+
+function MicroMacroPill({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: string;
+  value: number;
+}) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium tabular"
+      style={{ background: `color-mix(in srgb, ${color} 12%, transparent)`, color }}
+    >
+      <span className="font-bold">{label}</span>
+      <span>{value}g</span>
+    </span>
   );
 }
 
@@ -758,9 +1225,10 @@ function sumMacrosHelper(items: FoodItem[]): Macros {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// History view — last 7 days
-// ──────────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════════
+// HISTORY VIEW
+// ════════════════════════════════════════════════════════════════════════════════
+
 function HistoryView({
   log,
   onBack,
@@ -774,7 +1242,7 @@ function HistoryView({
     const out: { dayStart: number; entries: MealEntry[]; total: number }[] = [];
     const today = startOfDay(Date.now());
     for (let i = 0; i < 7; i++) {
-      const ds = today - i * 24 * 60 * 60 * 1000;
+      const ds = today - i * 86_400_000;
       const entries = entriesForDay(log, ds);
       out.push({
         dayStart: ds,
@@ -785,79 +1253,182 @@ function HistoryView({
     return out;
   }, [log]);
 
+  const maxDayTotal = Math.max(...days.map((d) => d.total), 1);
+  const weekTotal = days.reduce((s, d) => s + d.total, 0);
+  const weekAvg = Math.round(weekTotal / 7);
+
   return (
-    <div className="flex-1 flex flex-col p-4 gap-3">
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-sm text-zinc-500">
-          ← Back
-        </button>
-        <h1 className="font-semibold">Last 7 days</h1>
-        <button
-          onClick={() => {
-            const csv = exportToCSV(log);
-            const stamp = new Date().toISOString().slice(0, 10);
-            downloadCSV(`calora-${stamp}.csv`, csv);
-          }}
-          disabled={log.length === 0}
-          className="text-sm text-emerald-600 disabled:text-zinc-300 dark:disabled:text-zinc-700 disabled:cursor-not-allowed"
-        >
-          Export CSV
-        </button>
-      </div>
-      {days.map((d) => {
-        const label =
-          d.dayStart === startOfDay(Date.now())
-            ? "Today"
-            : new Date(d.dayStart).toLocaleDateString([], {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              });
-        return (
-          <div
-            key={d.dayStart}
-            className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3"
+    <>
+      <PageHeader
+        back={
+          <IconButton label="Back" onClick={onBack}>
+            <IconChevronLeft size={20} />
+          </IconButton>
+        }
+        title="Last 7 days"
+        subtitle={`Avg ${weekAvg.toLocaleString()} kcal/day · ${weekTotal.toLocaleString()} total`}
+        right={
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={log.length === 0}
+            onClick={() => {
+              const csv = exportToCSV(log);
+              const stamp = new Date().toISOString().slice(0, 10);
+              downloadCSV(`calora-${stamp}.csv`, csv);
+            }}
           >
-            <div className="flex justify-between mb-2">
-              <span className="font-medium">{label}</span>
-              <span className="tabular-nums text-zinc-500">
-                {d.total} kcal · {d.entries.length}{" "}
-                {d.entries.length === 1 ? "meal" : "meals"}
-              </span>
-            </div>
-            {d.entries.length > 0 && (
-              <ul className="flex flex-col gap-1">
-                {d.entries.map((e) => (
-                  <li
-                    key={e.id}
-                    className="flex justify-between text-sm gap-2"
-                  >
-                    <span className="truncate text-zinc-600 dark:text-zinc-400">
-                      {e.items.map((i) => i.name).join(", ") || "(no items)"}
-                    </span>
-                    <span className="flex gap-2 items-center shrink-0">
-                      <span className="tabular-nums">{e.totals.calories}</span>
-                      <button
-                        onClick={() => onRemove(e.id)}
-                        className="text-zinc-300 hover:text-red-500 text-xs"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <IconDownload size={14} /> CSV
+          </Button>
+        }
+      />
+
+      <div className="px-5 pb-5 flex-1">
+        {/* Bar chart */}
+        <Card className="p-4 mb-4">
+          <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] mb-3">
+            Daily totals
           </div>
-        );
-      })}
-    </div>
+          <div className="flex items-end justify-between gap-1.5 h-[120px]">
+            {days.map((d) => {
+              const h = Math.max(4, (d.total / maxDayTotal) * 100);
+              const label =
+                d.dayStart === startOfDay(Date.now())
+                  ? "Today"
+                  : new Date(d.dayStart).toLocaleDateString([], {
+                      weekday: "short",
+                    });
+              const dateLabel = new Date(d.dayStart).getDate();
+              const isToday = d.dayStart === startOfDay(Date.now());
+              return (
+                <div key={d.dayStart} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                  <span className="text-[10px] tabular text-[var(--ink-muted)] truncate w-full text-center">
+                    {d.total || "·"}
+                  </span>
+                  <div className="w-full bg-[var(--surface-soft)] rounded-[6px] overflow-hidden flex-1 flex items-end">
+                    <div
+                      className="w-full transition-all duration-700"
+                      style={{
+                        height: `${h}%`,
+                        background: isToday
+                          ? "var(--accent)"
+                          : d.total > 0
+                            ? "var(--accent-soft)"
+                            : "transparent",
+                        borderTop:
+                          d.total > 0
+                            ? isToday
+                              ? "1px solid var(--accent-hover)"
+                              : "1px solid var(--accent)"
+                            : "none",
+                      }}
+                    />
+                  </div>
+                  <div className="text-[10px] text-[var(--ink-muted)] truncate w-full text-center">
+                    {label.slice(0, 3)}
+                  </div>
+                  <div className="text-[9px] text-[var(--ink-muted)] -mt-0.5 tabular">
+                    {dateLabel}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        {/* Day sections */}
+        {days.every((d) => d.entries.length === 0) ? (
+          <EmptyState
+            icon={<IconHistory size={22} />}
+            title="Your week rolls up here"
+            description="Once you start logging meals, you'll see daily breakdowns and totals."
+          />
+        ) : (
+          <div className="space-y-2.5">
+            {days.map((d) => {
+              if (d.entries.length === 0) return null;
+              const label =
+                d.dayStart === startOfDay(Date.now())
+                  ? "Today"
+                  : new Date(d.dayStart).toLocaleDateString([], {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    });
+              return (
+                <Card key={d.dayStart} className="overflow-hidden">
+                  <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                    <span className="text-[14px] font-semibold">{label}</span>
+                    <span className="text-[12px] tabular text-[var(--ink-muted)]">
+                      {d.total.toLocaleString()} kcal · {d.entries.length}{" "}
+                      {d.entries.length === 1 ? "meal" : "meals"}
+                    </span>
+                  </div>
+                  <ul className="px-2 pb-2">
+                    {d.entries.map((e) => (
+                      <li
+                        key={e.id}
+                        className="flex items-center gap-2 px-2 py-2 hover:bg-[var(--surface-soft)] rounded-[10px] transition"
+                      >
+                        <div className="w-8 h-8 rounded-[8px] shrink-0 overflow-hidden bg-[var(--surface-soft)] flex items-center justify-center text-[10px] text-[var(--ink-muted)]">
+                          {e.imageDataUrl ? (
+                            <img
+                              src={e.imageDataUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            e.source === "photo" ? (
+                              <IconCamera size={14} />
+                            ) : (
+                              <IconLeaf size={14} />
+                            )
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] truncate text-[var(--ink)]">
+                            {e.items.map((i) => i.name).join(", ") || "(no items)"}
+                          </div>
+                          <div className="text-[10px] text-[var(--ink-muted)]">
+                            <span className="capitalize">{e.meal}</span>
+                            <span> · </span>
+                            <span className="tabular">
+                              {new Date(e.loggedAt).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[13px] font-semibold tabular shrink-0">
+                          {e.totals.calories}
+                        </span>
+                        <button
+                          onClick={() => {
+                            if (confirm("Remove this meal?")) onRemove(e.id);
+                          }}
+                          className="text-[var(--ink-muted)] hover:text-[var(--danger)] ml-1"
+                          aria-label="Remove meal"
+                        >
+                          <IconClose size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Settings view — calorie goal
-// ──────────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════════
+// SETTINGS VIEW
+// ════════════════════════════════════════════════════════════════════════════════
+
 function SettingsView({
   settings,
   onSave,
@@ -868,70 +1439,298 @@ function SettingsView({
   onBack: () => void;
 }) {
   const [goal, setGoal] = useState(settings.goalCalories);
+  const saved = goal === settings.goalCalories;
+  const targets = macroTargets(goal);
 
   return (
-    <div className="flex-1 flex flex-col p-4 gap-4">
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-sm text-zinc-500">
-          ← Back
-        </button>
-        <h1 className="font-semibold">Settings</h1>
-        <div className="w-10" />
-      </div>
+    <>
+      <PageHeader
+        back={
+          <IconButton label="Back" onClick={onBack}>
+            <IconChevronLeft size={20} />
+          </IconButton>
+        }
+        title="Daily goal"
+        subtitle="Calora fills the macros for you from this number."
+      />
 
-      <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4">
-        <label className="block text-sm text-zinc-500 mb-2">
-          Daily calorie goal
-        </label>
-        <div className="flex items-baseline gap-2">
+      <div className="px-5 flex-1 pb-8 space-y-5">
+        {/* Hero number */}
+        <Card className="p-5">
+          <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] mb-2">
+            Daily calorie target
+          </div>
+          <div className="flex items-baseline gap-2">
+            <input
+              type="number"
+              value={goal}
+              onChange={(e) =>
+                setGoal(Math.max(800, Math.min(5000, parseInt(e.target.value) || 0)))
+              }
+              step={50}
+              className="flex-1 bg-transparent font-[family-name:var(--font-display)] text-[48px] font-semibold tabular tracking-tight outline-none"
+              inputMode="numeric"
+            />
+            <span className="text-[14px] text-[var(--ink-muted)] pb-2">kcal</span>
+          </div>
+
+          {/* Slider */}
           <input
-            type="number"
-            value={goal}
-            onChange={(e) =>
-              setGoal(Math.max(0, parseInt(e.target.value) || 0))
-            }
-            className="flex-1 text-3xl font-bold tabular-nums bg-transparent outline-none"
+            type="range"
+            min={1200}
+            max={3500}
+            step={50}
+            value={Math.min(3500, Math.max(1200, goal))}
+            onChange={(e) => setGoal(parseInt(e.target.value))}
+            className="w-full mt-4 accent-[var(--accent)]"
           />
-          <span className="text-zinc-500">kcal</span>
-        </div>
-        <div className="grid grid-cols-4 gap-2 mt-4">
-          {[1500, 1800, 2000, 2500].map((g) => (
-            <button
-              key={g}
-              onClick={() => setGoal(g)}
-              className={`py-2 rounded-lg text-sm ${
-                goal === g
-                  ? "bg-emerald-500 text-white"
-                  : "bg-zinc-100 dark:bg-zinc-800"
-              }`}
-            >
-              {g}
-            </button>
-          ))}
-        </div>
+
+          {/* Tick presets */}
+          <div className="flex justify-between gap-2 mt-3">
+            {[1500, 1800, 2000, 2500].map((g) => (
+              <button
+                key={g}
+                onClick={() => setGoal(g)}
+                className={[
+                  "flex-1 py-2 rounded-[12px] text-[13px] tabular font-medium transition",
+                  goal === g
+                    ? "bg-[var(--accent)] text-white"
+                    : "bg-[var(--surface-soft)] text-[var(--ink-soft)] hover:bg-[var(--surface-strong)]",
+                ].join(" ")}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        {/* Macro preview */}
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] mb-3">
+            Daily macro target at this goal
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-[14px] bg-[var(--surface-soft)] p-3">
+              <div
+                className="text-[22px] font-semibold tabular"
+                style={{ color: MACRO_PROTEIN }}
+              >
+                {targets.protein_g}g
+              </div>
+              <div className="text-[11px] text-[var(--ink-muted)] mt-0.5">protein</div>
+              <div className="text-[10px] text-[var(--ink-muted)]">30%</div>
+            </div>
+            <div className="rounded-[14px] bg-[var(--surface-soft)] p-3">
+              <div
+                className="text-[22px] font-semibold tabular"
+                style={{ color: MACRO_CARBS }}
+              >
+                {targets.carbs_g}g
+              </div>
+              <div className="text-[11px] text-[var(--ink-muted)] mt-0.5">carbs</div>
+              <div className="text-[10px] text-[var(--ink-muted)]">40%</div>
+            </div>
+            <div className="rounded-[14px] bg-[var(--surface-soft)] p-3">
+              <div
+                className="text-[22px] font-semibold tabular"
+                style={{ color: MACRO_FAT }}
+              >
+                {targets.fat_g}g
+              </div>
+              <div className="text-[11px] text-[var(--ink-muted)] mt-0.5">fat</div>
+              <div className="text-[10px] text-[var(--ink-muted)]">30%</div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Save button — disabled when unchanged */}
+        <Button
+          variant="primary"
+          size="lg"
+          full
+          disabled={saved || goal < 800 || goal > 5000}
+          onClick={() => onSave({ goalCalories: goal })}
+        >
+          <IconCheck size={18} />
+          Save goal
+        </Button>
+
+        {/* About / disclaimer */}
+        <details className="rounded-[16px] bg-[var(--surface-soft)] px-4 py-3">
+          <summary className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-muted)] cursor-pointer">
+            About & disclaimer
+          </summary>
+          <div className="mt-3 space-y-2 text-[12px] text-[var(--ink-soft)] leading-relaxed">
+            <p>
+              Calora is not a medical device. AI estimates are approximate —
+              always edit anything that looks wrong before saving.
+            </p>
+            <p>
+              Data lives on this device only. v0.1 — no account, no sync. Clearing
+              browser data will erase your log.
+            </p>
+            <p className="text-[var(--ink-muted)]">
+              Built by hand · MIT license · source on GitHub
+            </p>
+          </div>
+        </details>
       </div>
+    </>
+  );
+}
 
-      <button
-        onClick={() => onSave({ goalCalories: goal })}
-        className="w-full py-4 rounded-2xl bg-emerald-500 text-white font-semibold"
-      >
-        Save
-      </button>
+// ════════════════════════════════════════════════════════════════════════════════
+// MEAL DETAIL VIEW (when user taps a meal card on home)
+// ════════════════════════════════════════════════════════════════════════════════
 
-      <p className="text-xs text-zinc-500 text-center mt-4">
-        Data lives on this device only. v0.1 MVP — no account, no sync.
-      </p>
+function MealDetailView({
+  log,
+  onBack,
+  onRemove,
+}: {
+  log: MealEntry[];
+  onBack: () => void;
+  onRemove: (id: string) => void;
+}) {
+  const id = sessionStorage.getItem("calora:open-meal-id");
+  const entry = log.find((e) => e.id === id);
 
-      <div className="mt-8 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
-          About / Disclaimer
-        </h2>
-        <p className="text-xs text-zinc-500 leading-relaxed">
-          Calora is not a medical device. AI estimates are approximate —
-          always edit anything that looks wrong before saving. Consult a
-          qualified professional for medical nutrition advice.
-        </p>
+  if (!entry) {
+    return (
+      <>
+        <PageHeader
+          back={
+            <IconButton label="Back" onClick={onBack}>
+              <IconChevronLeft size={20} />
+            </IconButton>
+          }
+          title="Meal"
+        />
+        <EmptyState
+          title="Couldn't find this meal"
+          description="It may have been removed or you're in a different session."
+          action={
+            <Button variant="primary" onClick={onBack}>
+              Back to home
+            </Button>
+          }
+        />
+      </>
+    );
+  }
+
+  const time = new Date(entry.loggedAt).toLocaleString([], {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+    day: "numeric",
+  });
+
+  return (
+    <>
+      <PageHeader
+        back={
+          <IconButton label="Back" onClick={onBack}>
+            <IconChevronLeft size={20} />
+          </IconButton>
+        }
+        title={
+          <span className="capitalize">
+            {entry.meal} ·{" "}
+            <span className="text-[var(--ink-muted)] font-normal tabular text-[15px]">
+              {new Date(entry.loggedAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </span>
+        }
+        subtitle={time}
+      />
+
+      <div className="px-5 flex-1 pb-8">
+        {entry.imageDataUrl && (
+          <Card className="overflow-hidden mb-4">
+            <img
+              src={entry.imageDataUrl}
+              alt={entry.items.map((i) => i.name).join(", ")}
+              className="w-full max-h-[280px] object-cover"
+            />
+          </Card>
+        )}
+
+        <Card className="p-5 mb-4">
+          <div className="flex items-baseline justify-between mb-4">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)]">
+                Total
+              </div>
+              <div className="font-[family-name:var(--font-display)] text-[36px] font-semibold tabular leading-none tracking-tight">
+                {entry.totals.calories.toLocaleString()}
+                <span className="text-[14px] font-normal text-[var(--ink-muted)] ml-1.5">
+                  kcal
+                </span>
+              </div>
+            </div>
+            <div className="text-right text-[11px] tabular">
+              <div>
+                <span style={{ color: MACRO_PROTEIN }} className="font-semibold">
+                  {entry.totals.protein_g}g
+                </span>{" "}
+                <span className="text-[var(--ink-muted)]">P</span>
+              </div>
+              <div>
+                <span style={{ color: MACRO_CARBS }} className="font-semibold">
+                  {entry.totals.carbs_g}g
+                </span>{" "}
+                <span className="text-[var(--ink-muted)]">C</span>
+              </div>
+              <div>
+                <span style={{ color: MACRO_FAT }} className="font-semibold">
+                  {entry.totals.fat_g}g
+                </span>{" "}
+                <span className="text-[var(--ink-muted)]">F</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            {entry.items.map((item, i) => (
+              <div
+                key={i}
+                className="flex items-baseline justify-between py-2 border-t border-[var(--hairline-soft)]"
+              >
+                <span className="text-[14px]">{item.name}</span>
+                <span className="text-[13px] tabular font-semibold">
+                  {item.calories} kcal
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {entry.notes && (
+          <Card className="p-4 mb-4 bg-[var(--surface-soft)]">
+            <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] mb-1">
+              AI note
+            </div>
+            <p className="text-[13px] text-[var(--ink-soft)] italic">{entry.notes}</p>
+          </Card>
+        )}
+
+        <Button
+          variant="danger"
+          size="lg"
+          full
+          onClick={() => {
+            if (confirm("Remove this meal?")) onRemove(entry.id);
+          }}
+        >
+          <IconTrash size={16} />
+          Remove meal
+        </Button>
       </div>
-    </div>
+    </>
   );
 }
