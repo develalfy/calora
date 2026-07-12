@@ -19,7 +19,7 @@ import {
   sumMacros,
   uuid,
 } from "@/lib/storage";
-import { compressImage } from "@/lib/image";
+import { compressImageSafe } from "@/lib/image";
 import { downloadCSV, exportToCSV } from "@/lib/export";
 import {
   Button,
@@ -563,14 +563,17 @@ function CaptureView({
   recentEntries: MealEntry[];
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const [meal, setMeal] = useState<MealType>("lunch");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [heicHint, setHeicHint] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   const handleFile = async (file: File) => {
     setErr(null);
+    setHeicHint(false);
     setBusy(true);
     try {
       const MAX_MB = 30;
@@ -579,8 +582,12 @@ function CaptureView({
           `Image is ${(file.size / 1024 / 1024).toFixed(1)}MB; please pick one under ${MAX_MB}MB.`,
         );
       }
-      const dataUrl = await compressImage(file, 1024, 0.82);
-      setPhotoPreview(dataUrl);
+      const result = await compressImageSafe(file, 1024, 0.82);
+      if (!result.ok) {
+        if (result.heicHint) setHeicHint(true);
+        throw new Error(result.userMessage);
+      }
+      setPhotoPreview(result.dataUrl);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -644,6 +651,17 @@ function CaptureView({
       <section className="px-5 pb-4">
         <input
           ref={fileRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+          className="hidden"
+        />
+        {/* Camera-only input (iOS Safari respects capture to launch the camera directly) */}
+        <input
+          ref={cameraRef}
           type="file"
           accept="image/*"
           capture="environment"
@@ -714,8 +732,42 @@ function CaptureView({
           </button>
         )}
 
+        {/* Two explicit actions — takes the guesswork out of mobile vs desktop */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => cameraRef.current?.click()}
+            disabled={busy}
+            className="flex items-center justify-center gap-1.5 py-2.5 rounded-[12px] bg-[var(--surface-card)] border border-[var(--hairline)] text-[13px] font-medium text-[var(--ink)] hover:bg-[var(--surface-strong)] active:scale-[0.98] transition disabled:opacity-50"
+          >
+            <IconCamera size={14} /> Take photo
+          </button>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            className="flex items-center justify-center gap-1.5 py-2.5 rounded-[12px] bg-[var(--surface-card)] border border-[var(--hairline)] text-[13px] font-medium text-[var(--ink)] hover:bg-[var(--surface-strong)] active:scale-[0.98] transition disabled:opacity-50"
+          >
+            <IconUpload size={14} /> Choose file
+          </button>
+        </div>
+
         {err && (
-          <p className="mt-3 text-[12px] text-[var(--danger)]">{err}</p>
+          <div
+            className="mt-3 rounded-[14px] border border-[var(--danger)]/30 bg-[var(--danger)]/[0.06] px-3 py-2.5"
+            role="alert"
+          >
+            <p className="text-[12px] text-[var(--danger)] leading-relaxed">
+              {err}
+            </p>
+            {heicHint && (
+              <p className="mt-2 text-[11px] text-[var(--ink-soft)] leading-relaxed">
+                Tip: in iOS Settings → Camera → Formats, switch to{" "}
+                <strong>Most Compatible</strong> so photos save as JPEG. Or just
+                type what you ate below.
+              </p>
+            )}
+          </div>
         )}
       </section>
 
