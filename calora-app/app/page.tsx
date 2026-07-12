@@ -332,6 +332,13 @@ function CaptureView({
     setErr(null);
     setBusy(true);
     try {
+      // Guard: too-large files are almost certainly going to OOM the canvas or fail to base64 in sessionStorage
+      const MAX_MB = 30;
+      if (file.size > MAX_MB * 1024 * 1024) {
+        throw new Error(
+          `Image is ${(file.size / 1024 / 1024).toFixed(1)}MB; please pick one under ${MAX_MB}MB.`,
+        );
+      }
       const dataUrl = await compressImage(file, 1024, 0.82);
       onEstimate({ image: dataUrl, meal });
     } catch (e) {
