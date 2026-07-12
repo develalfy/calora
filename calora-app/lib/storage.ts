@@ -85,3 +85,43 @@ export function uuid(): string {
   }
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Onboarding state — 3-step first-run wizard. Cleared once user completes.
+// ─────────────────────────────────────────────────────────────────────────
+
+const ONBOARDING_KEY = "calora:onboarding:v1";
+
+export interface OnboardingState {
+  startedAt: number;
+  completedAt?: number;
+  /** Step the user is on (0-indexed) for resumable onboarding. */
+  step: number;
+  /** User-saved goal picked during onboarding. */
+  pickedGoal?: number;
+}
+
+export function loadOnboarding(): OnboardingState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(ONBOARDING_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveOnboarding(s: OnboardingState): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ONBOARDING_KEY, JSON.stringify(s));
+}
+
+export function clearOnboarding(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ONBOARDING_KEY);
+}
+
+export function hasCompletedOnboarding(): boolean {
+  const s = loadOnboarding();
+  return !!s?.completedAt;
+}

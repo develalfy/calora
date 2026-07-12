@@ -15,6 +15,10 @@ import {
   entriesForDay,
   sumMacros,
   uuid,
+  loadOnboarding,
+  saveOnboarding,
+  clearOnboarding,
+  hasCompletedOnboarding,
 } from "./storage";
 import type { MealEntry, FoodItem, Macros, MealType } from "./types";
 
@@ -226,5 +230,35 @@ describe("uuid", () => {
   it("produces unique values", () => {
     const ids = new Set(Array.from({ length: 100 }, () => uuid()));
     expect(ids.size).toBe(100);
+  });
+});
+
+describe("onboarding state", () => {
+  it("starts as null", () => {
+    expect(loadOnboarding()).toBeNull();
+    expect(hasCompletedOnboarding()).toBe(false);
+  });
+
+  it("round-trips via saveOnboarding/loadOnboarding", () => {
+    saveOnboarding({ startedAt: 1000, step: 1, pickedGoal: 2000 });
+    const s = loadOnboarding();
+    expect(s).toEqual({ startedAt: 1000, step: 1, pickedGoal: 2000 });
+  });
+
+  it("reports completed when completedAt is set", () => {
+    saveOnboarding({ startedAt: 1000, step: 3, completedAt: 2000, pickedGoal: 2000 });
+    expect(hasCompletedOnboarding()).toBe(true);
+  });
+
+  it("reports not completed without completedAt", () => {
+    saveOnboarding({ startedAt: 1000, step: 1 });
+    expect(hasCompletedOnboarding()).toBe(false);
+  });
+
+  it("clearOnboarding wipes state", () => {
+    saveOnboarding({ startedAt: 1000, step: 3, completedAt: 2000 });
+    clearOnboarding();
+    expect(loadOnboarding()).toBeNull();
+    expect(hasCompletedOnboarding()).toBe(false);
   });
 });

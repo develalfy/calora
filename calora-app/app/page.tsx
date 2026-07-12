@@ -309,13 +309,13 @@ export default function LandingPage() {
             <Link href="/app" className="hover:text-[var(--ink)] transition">
               Open app
             </Link>
-            <a href="#privacy" className="hover:text-[var(--ink)] transition">
+            <Link href="/privacy" className="hover:text-[var(--ink)] transition">
               Privacy
-            </a>
-            <a href="#terms" className="hover:text-[var(--ink)] transition">
+            </Link>
+            <Link href="/terms" className="hover:text-[var(--ink)] transition">
               Terms
-            </a>
-            <a href="#contact" className="hover:text-[var(--ink)] transition">
+            </Link>
+            <a href="mailto:hello@calora.app" className="hover:text-[var(--ink)] transition">
               Contact
             </a>
           </div>

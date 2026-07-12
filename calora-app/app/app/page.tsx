@@ -13,6 +13,9 @@ import {
   entriesForDay,
   loadLog,
   loadSettings,
+  loadOnboarding,
+  saveOnboarding,
+  clearOnboarding,
   removeEntry,
   saveSettings,
   startOfDay,
@@ -21,6 +24,7 @@ import {
 } from "@/lib/storage";
 import { compressImageSafe } from "@/lib/image";
 import { downloadCSV, exportToCSV } from "@/lib/export";
+import { addFavorite, getFavorites } from "@/lib/favorites";
 import {
   computeStreak,
   computeLongestStreak,
@@ -29,6 +33,8 @@ import {
   sumTotals,
   formatKcal,
 } from "@/lib/calc";
+import { recordScan, scansRemaining, isOverFreeLimit } from "@/lib/usage";
+import { track } from "@/lib/analytics";
 import {
   Button,
   Card,
@@ -72,7 +78,8 @@ type View =
   | "edit"
   | "history"
   | "settings"
-  | "meal-detail";
+  | "meal-detail"
+  | "onboarding";
 
 const MEAL_OPTIONS = [
   { value: "breakfast", label: "Breakfast" },
@@ -86,10 +93,20 @@ export default function HomePage() {
   const [log, setLog] = useState<MealEntry[]>([]);
   const [settings, setSettings] = useState({ goalCalories: 2000 });
   const [now, setNow] = useState<number>(() => Date.now());
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [scanRemaining, setScanRemaining] = useState(5);
 
   useEffect(() => {
     setLog(loadLog());
-    setSettings(loadSettings());
+    const s = loadSettings();
+    setSettings(s);
+    setScanRemaining(scansRemaining());
+    // First-time users see onboarding before home
+    if (!localStorage.getItem("calora:onboarding:v1")) {
+      track("onboarding_start");
+      setView("onboarding");
+    }
+    track("app_open");
   }, []);
 
   // Tick once a minute so "today" stays current
@@ -198,6 +215,15 @@ export default function HomePage() {
           <CaptureView
             onCancel={onHome}
             onEstimate={(req) => {
+              // Enforce free-tier limit before hitting the API
+              if (isOverFreeLimit()) {
+                track("free_limit_hit");
+                setUpgradeOpen(true);
+                return;
+              }
+              recordScan();
+              setScanRemaining(scansRemaining());
+              track("scan_start", { hasImage: !!req.image });
               sessionStorage.setItem(
                 "calora:pending-estimate",
                 JSON.stringify(req),
@@ -205,18 +231,26 @@ export default function HomePage() {
               setView("loading");
             }}
             recentEntries={log.slice(0, 5)}
+            scansRemaining={scanRemaining}
           />
         )}
         {view === "loading" && (
           <LoadingView
             onDone={(result) => {
+              track("scan_complete", {
+                items: result.items.length,
+                confidence: result.confidence,
+              });
               sessionStorage.setItem(
                 "calora:pending-result",
                 JSON.stringify(result),
               );
               setView("edit");
             }}
-            onError={onHome}
+            onError={() => {
+              track("scan_error");
+              onHome();
+            }}
           />
         )}
         {view === "edit" && (
@@ -224,7 +258,20 @@ export default function HomePage() {
             onCancel={() => setView("capture")}
             onSave={(entry) => {
               setLog(addEntry(entry));
+              track("scan_save", {
+                items: entry.items.length,
+                source: entry.source,
+              });
               onHome();
+            }}
+            onFavorite={(entry) => {
+              addFavorite({
+                name: entry.items[0]?.name ?? "Meal",
+                items: entry.items,
+                sourceMealId: entry.id,
+              });
+              track("favorite_add", { mealId: entry.id });
+              toast("Saved to favorites", { kind: "success" });
             }}
           />
         )}
@@ -282,6 +329,50 @@ export default function HomePage() {
         )}
       </div>
       <ToastHost />
+
+      {view === "onboarding" && (
+        <OnboardingView
+          initialGoal={settings.goalCalories}
+          onComplete={(goal) => {
+            track("onboarding_complete", { goal });
+            if (goal !== settings.goalCalories) {
+              const next = { goalCalories: goal };
+              saveSettings(next);
+              setSettings(next);
+            }
+            saveOnboarding({
+              startedAt: Date.now(),
+              step: 3,
+              completedAt: Date.now(),
+              pickedGoal: goal,
+            });
+            setView("home");
+          }}
+          onSkip={() => {
+            track("onboarding_skip");
+            saveOnboarding({
+              startedAt: Date.now(),
+              step: 0,
+              completedAt: Date.now(),
+            });
+            setView("home");
+          }}
+        />
+      )}
+
+      <UpgradeModal
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+        onUpgrade={() => {
+          track("upgrade_cta_click", { source: "free_limit" });
+          // Post-MVP: redirect to /api/stripe/checkout
+          toast(
+            "Pro checkout is coming soon — email hello@calora.app and we'll get you set up.",
+            { kind: "info" },
+          );
+          setUpgradeOpen(false);
+        }}
+      />
     </main>
   );
 }
@@ -695,6 +786,7 @@ function CaptureView({
   onCancel,
   onEstimate,
   recentEntries,
+  scansRemaining,
 }: {
   onCancel: () => void;
   onEstimate: (req: {
@@ -703,6 +795,7 @@ function CaptureView({
     meal: MealType;
   }) => void;
   recentEntries: MealEntry[];
+  scansRemaining: number;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -778,7 +871,11 @@ function CaptureView({
           </IconButton>
         }
         title="Log a meal"
-        subtitle="Photo or text works. AI reads it in about 5 seconds."
+        subtitle={
+          scansRemaining > 0
+            ? `Photo or text works. AI reads it in about 5 seconds. ${scansRemaining} ${scansRemaining === 1 ? "scan" : "scans"} left today.`
+            : "Photo or text works. AI reads it in about 5 seconds. Daily free limit reached — upgrade for unlimited."
+        }
         right={
           <PillToggle
             options={MEAL_OPTIONS}
@@ -1175,9 +1272,11 @@ function LoadingView({
 function EditView({
   onCancel,
   onSave,
+  onFavorite,
 }: {
   onCancel: () => void;
   onSave: (e: MealEntry) => void;
+  onFavorite?: (e: MealEntry) => void;
 }) {
   const [result, setResult] = useState<EstimateResult | null>(null);
   const [meal, setMeal] = useState<MealType>("lunch");
@@ -1329,27 +1428,50 @@ function EditView({
               <div>F {result.totals.fat_g}g</div>
             </div>
           </div>
-          <Button
-            variant="primary"
-            size="lg"
-            full
-            disabled={result.items.length === 0 || result.totals.calories === 0}
-            onClick={() =>
-              onSave({
-                id: uuid(),
-                loggedAt: Date.now(),
-                meal,
-                items: result.items,
-                totals: result.totals,
-                source: pendingImage ? "photo" : "text",
-                imageDataUrl: pendingImage,
-                notes: result.notes,
-              })
-            }
-          >
-            <IconCheck size={18} />
-            Save to today
-          </Button>
+          <div className="flex gap-2">
+            {onFavorite && (
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={() =>
+                  onFavorite({
+                    id: uuid(),
+                    loggedAt: Date.now(),
+                    meal,
+                    items: result.items,
+                    totals: result.totals,
+                    source: pendingImage ? "photo" : "text",
+                    imageDataUrl: pendingImage,
+                    notes: result.notes,
+                  })
+                }
+                aria-label="Save to favorites"
+              >
+                ★ Favorite
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              size="lg"
+              full
+              disabled={result.items.length === 0 || result.totals.calories === 0}
+              onClick={() =>
+                onSave({
+                  id: uuid(),
+                  loggedAt: Date.now(),
+                  meal,
+                  items: result.items,
+                  totals: result.totals,
+                  source: pendingImage ? "photo" : "text",
+                  imageDataUrl: pendingImage,
+                  notes: result.notes,
+                })
+              }
+            >
+              <IconCheck size={18} />
+              Save to today
+            </Button>
+          </div>
         </Card>
       </div>
     </>
@@ -1994,5 +2116,280 @@ function MealDetailView({
         </Button>
       </div>
     </>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ONBOARDING VIEW — 3-step first-run wizard.
+// Step 1: welcome + value prop
+// Step 2: pick a calorie goal
+// Step 3: try it — links directly to capture flow
+// ════════════════════════════════════════════════════════════════════════════════
+
+function OnboardingView({
+  initialGoal,
+  onComplete,
+  onSkip,
+}: {
+  initialGoal: number;
+  onComplete: (goal: number) => void;
+  onSkip: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [goal, setGoal] = useState(initialGoal);
+
+  const next = () => {
+    track("onboarding_step_complete", { step });
+    setStep((s) => Math.min(2, s + 1));
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 bg-[var(--canvas)] overflow-y-auto">
+      <div className="mx-auto max-w-md min-h-[100dvh] flex flex-col px-5 pt-12 pb-8">
+        {/* Progress dots */}
+        <div className="flex items-center justify-center gap-1.5 mb-10" aria-label={`Step ${step + 1} of 3`}>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              aria-hidden
+              className={[
+                "h-1.5 rounded-full transition-all",
+                i === step
+                  ? "w-8 bg-[var(--accent)]"
+                  : i < step
+                  ? "w-1.5 bg-[var(--accent)]/50"
+                  : "w-1.5 bg-[var(--surface-strong)]",
+              ].join(" ")}
+            />
+          ))}
+        </div>
+
+        {step === 0 && (
+          <div className="flex-1 flex flex-col">
+            <div className="w-20 h-20 rounded-[24px] bg-[var(--accent-soft)] flex items-center justify-center mb-6 mx-auto">
+              <IconCamera size={36} />
+            </div>
+            <h1 className="font-[family-name:var(--font-display)] text-[32px] font-semibold tracking-[-0.02em] text-[var(--ink)] text-center leading-[1.1] mb-3">
+              Snap a meal.
+              <br />
+              Know your calories.
+            </h1>
+            <p className="text-[15px] text-[var(--ink-soft)] leading-relaxed text-center max-w-sm mx-auto mb-8">
+              No signup. No database hunting. Open the app, snap the plate,
+              done in about 5 seconds.
+            </p>
+
+            <ul className="space-y-3 mb-10">
+              {[
+                "Photo or text — your choice",
+                "Edit anything before you save",
+                "Your data stays on your device",
+              ].map((b) => (
+                <li key={b} className="flex items-start gap-2.5 text-[14px] text-[var(--ink-soft)]">
+                  <span className="w-5 h-5 rounded-full bg-[var(--success-soft)] text-[var(--success)] flex items-center justify-center shrink-0 mt-0.5">
+                    <IconCheck size={12} />
+                  </span>
+                  {b}
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-auto space-y-3">
+              <Button size="lg" full onClick={next}>
+                Get started
+              </Button>
+              <button
+                onClick={onSkip}
+                className="block w-full text-center text-[13px] text-[var(--ink-muted)] hover:text-[var(--ink-soft)] py-2"
+              >
+                Skip — use default
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 1 && (
+          <div className="flex-1 flex flex-col">
+            <h1 className="font-[family-name:var(--font-display)] text-[28px] font-semibold tracking-[-0.02em] text-[var(--ink)] mb-2 leading-[1.15]">
+              What&apos;s your daily calorie goal?
+            </h1>
+            <p className="text-[14px] text-[var(--ink-muted)] mb-8">
+              The average adult needs 2,000–2,500 kcal. Adjust anytime in
+              Settings.
+            </p>
+
+            <div className="rounded-[20px] bg-[var(--surface-card)] border border-[var(--hairline)] p-6 mb-6">
+              <div className="flex items-baseline justify-between mb-3">
+                <span className="font-[family-name:var(--font-display)] text-[44px] font-semibold tabular tracking-tight text-[var(--ink)]">
+                  {goal.toLocaleString()}
+                </span>
+                <span className="text-[13px] text-[var(--ink-muted)]">kcal/day</span>
+              </div>
+              <input
+                type="range"
+                min={1200}
+                max={3500}
+                step={50}
+                value={goal}
+                onChange={(e) => setGoal(parseInt(e.target.value, 10))}
+                aria-label="Daily calorie goal"
+                className="w-full accent-[var(--accent)]"
+              />
+              <div className="flex justify-between text-[11px] text-[var(--ink-muted)] mt-2 tabular">
+                <span>1,200</span>
+                <span>2,000</span>
+                <span>3,500</span>
+              </div>
+            </div>
+
+            <div className="text-[13px] text-[var(--ink-soft)] mb-6 leading-relaxed">
+              Target macros: <strong>{Math.round((goal * 0.3) / 4)}g protein</strong>,{" "}
+              <strong>{Math.round((goal * 0.4) / 4)}g carbs</strong>,{" "}
+              <strong>{Math.round((goal * 0.3) / 9)}g fat</strong>
+              <span className="text-[var(--ink-muted)]"> (30 / 40 / 30 split)</span>
+            </div>
+
+            <div className="mt-auto">
+              <Button size="lg" full onClick={next}>
+                Continue
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="flex-1 flex flex-col">
+            <div className="w-20 h-20 rounded-[24px] bg-[var(--success-soft)] flex items-center justify-center mb-6 mx-auto">
+              <IconSparkle size={36} />
+            </div>
+            <h1 className="font-[family-name:var(--font-display)] text-[28px] font-semibold tracking-[-0.02em] text-[var(--ink)] text-center leading-[1.15] mb-3">
+              You&apos;re all set.
+            </h1>
+            <p className="text-[15px] text-[var(--ink-soft)] leading-relaxed text-center max-w-sm mx-auto mb-8">
+              Try logging your next meal. Photo or text — both work.
+            </p>
+
+            <div className="space-y-2.5 mb-8">
+              {[
+                { label: "Take a photo", icon: <IconCamera size={16} /> },
+                { label: "Type what you ate", icon: <IconSparkle size={16} /> },
+                { label: "Edit before saving", icon: <IconCheck size={16} /> },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center gap-3 rounded-[14px] bg-[var(--surface-card)] border border-[var(--hairline)] p-3.5"
+                >
+                  <span className="w-8 h-8 rounded-full bg-[var(--surface-soft)] text-[var(--ink-soft)] flex items-center justify-center shrink-0">
+                    {item.icon}
+                  </span>
+                  <span className="text-[14px] font-medium text-[var(--ink)]">
+                    {item.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-auto">
+              <Button size="lg" full onClick={() => onComplete(goal)}>
+                Open calora
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// UPGRADE MODAL — triggered when free tier limit is hit.
+// Anti-dark-pattern: dismissible in one tap, no fake urgency, honest copy.
+// ════════════════════════════════════════════════════════════════════════════════
+
+function UpgradeModal({
+  open,
+  onClose,
+  onUpgrade,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onUpgrade: () => void;
+}) {
+  useEffect(() => {
+    if (open) track("upgrade_modal_view");
+  }, [open]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 animate-[fadeIn_180ms_ease-out]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="upgrade-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          track("upgrade_modal_dismiss");
+          onClose();
+        }
+      }}
+    >
+      <div className="w-full max-w-md rounded-[24px] bg-[var(--surface-card)] border border-[var(--hairline)] shadow-2xl p-6 animate-[slideUp_240ms_cubic-bezier(0.22,1,0.36,1)]">
+        <div className="flex items-start justify-between mb-3">
+          <div className="w-12 h-12 rounded-[16px] bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center">
+            <IconSparkle size={22} />
+          </div>
+          <IconButton label="Close" onClick={onClose}>
+            <IconClose size={18} />
+          </IconButton>
+        </div>
+
+        <h2 id="upgrade-title" className="font-[family-name:var(--font-display)] text-[24px] font-semibold tracking-[-0.015em] text-[var(--ink)] leading-tight mb-2">
+          You&apos;ve used your 5 free scans today.
+        </h2>
+        <p className="text-[14px] text-[var(--ink-soft)] leading-relaxed mb-5">
+          Pro gives you unlimited scans, sync across devices, and weekly
+          progress emails. Cancel anytime.
+        </p>
+
+        <ul className="space-y-2 mb-6">
+          {[
+            "Unlimited scans (5/day on free)",
+            "Sync across phone + laptop",
+            "Weekly progress emails",
+            "7-day free trial, no surprise charges",
+          ].map((f) => (
+            <li key={f} className="flex items-start gap-2 text-[13.5px] text-[var(--ink-soft)]">
+              <span className="w-4 h-4 rounded-full bg-[var(--success-soft)] text-[var(--success)] flex items-center justify-center shrink-0 mt-0.5">
+                <IconCheck size={11} />
+              </span>
+              {f}
+            </li>
+          ))}
+        </ul>
+
+        <div className="flex items-baseline gap-1.5 mb-5">
+          <span className="font-[family-name:var(--font-display)] text-[28px] font-semibold tabular tracking-tight text-[var(--ink)]">
+            $4.99
+          </span>
+          <span className="text-[13px] text-[var(--ink-muted)]">/month</span>
+          <span className="text-[12px] text-[var(--ink-muted)] ml-2">
+            or $29.99/yr ($2.50/mo)
+          </span>
+        </div>
+
+        <Button size="lg" full onClick={onUpgrade}>
+          Start 7-day free trial
+        </Button>
+        <button
+          onClick={() => {
+            track("upgrade_modal_dismiss");
+            onClose();
+          }}
+          className="block w-full text-center text-[13px] text-[var(--ink-muted)] hover:text-[var(--ink-soft)] mt-3 py-1"
+        >
+          Maybe later
+        </button>
+      </div>
+    </div>
   );
 }
