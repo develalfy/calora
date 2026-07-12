@@ -394,44 +394,49 @@ function HeroRing({
 
   return (
     <div className="flex flex-col items-center">
-      <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden>
-        <defs>
-          <linearGradient id="heroGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="var(--accent)" />
-            <stop offset="100%" stopColor="#ff8a5b" />
-          </linearGradient>
-        </defs>
-        <circle
-          cx="100"
-          cy="100"
-          r={r}
-          fill="none"
-          stroke="var(--surface-strong)"
-          strokeWidth="14"
-        />
-        <circle
-          cx="100"
-          cy="100"
-          r={r}
-          fill="none"
-          stroke={overshoot ? "var(--warning)" : "url(#heroGrad)"}
-          strokeWidth="14"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={offset}
-          transform="rotate(-90 100 100)"
-          style={{ transition: "stroke-dashoffset 700ms cubic-bezier(0.22, 1, 0.36, 1)" }}
-        />
-      </svg>
-      <div className="-mt-[124px] text-center">
-        <div className="font-[family-name:var(--font-display)] text-[44px] leading-none font-semibold tabular tracking-tight text-[var(--ink)]">
-          {value.toLocaleString()}
-        </div>
-        <div className="text-[12px] text-[var(--ink-muted)] tabular mt-1">
-          of {goal.toLocaleString()} kcal
+      <div className="relative w-[200px] h-[200px]">
+        <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden>
+          <defs>
+            <linearGradient id="heroGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="var(--accent)" />
+              <stop offset="100%" stopColor="#ff8a5b" />
+            </linearGradient>
+          </defs>
+          <circle
+            cx="100"
+            cy="100"
+            r={r}
+            fill="none"
+            stroke="var(--surface-strong)"
+            strokeWidth="14"
+          />
+          <circle
+            cx="100"
+            cy="100"
+            r={r}
+            fill="none"
+            stroke={overshoot ? "var(--warning)" : "url(#heroGrad)"}
+            strokeWidth="14"
+            strokeLinecap="round"
+            strokeDasharray={c}
+            strokeDashoffset={offset}
+            transform="rotate(-90 100 100)"
+            style={{
+              transition:
+                "stroke-dashoffset 700ms cubic-bezier(0.22, 1, 0.36, 1)",
+            }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+          <div className="font-[family-name:var(--font-display)] text-[44px] leading-none font-semibold tabular tracking-tight text-[var(--ink)]">
+            {value.toLocaleString()}
+          </div>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] tabular mt-1.5">
+            of {goal.toLocaleString()} kcal
+          </div>
         </div>
       </div>
-      <div className="mt-3 text-[13px] font-medium text-center">
+      <div className="mt-4 text-[13px] font-medium text-center">
         {value === 0 ? (
           <span className="text-[var(--ink-muted)]">
             Log a meal to start tracking
