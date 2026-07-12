@@ -432,27 +432,24 @@ function HeroRing({
         </div>
       </div>
       <div className="mt-3 text-[13px] font-medium text-center">
-        {overshoot ? (
-          <span style={{ color: "var(--warning)" }}>
-            +{(consumed_overshoot(goal, value)).toLocaleString()} over today
+        {value === 0 ? (
+          <span className="text-[var(--ink-muted)]">
+            Log a meal to start tracking
           </span>
-        ) : consumedInRange(goal, value) ? (
+        ) : overshoot ? (
+          <span style={{ color: "var(--warning)" }}>
+            +{(value - goal).toLocaleString()} over today
+          </span>
+        ) : value < goal ? (
           <span className="text-[var(--ink-muted)]">
             {(goal - value).toLocaleString()} kcal left
           </span>
         ) : (
-          <span className="text-[var(--success)]">Goal hit · nice</span>
+          <span style={{ color: "var(--success)" }}>Goal hit · nice</span>
         )}
       </div>
     </div>
   );
-}
-
-function consumed_overshoot(goal: number, value: number): number {
-  return Math.max(0, value - goal);
-}
-function consumedInRange(goal: number, value: number): boolean {
-  return value > 0 && value < goal;
 }
 
 function MealCard({
