@@ -96,13 +96,13 @@ export function PageHeader({
   return (
     <header className="px-5 pt-5 pb-3">
       <div className="flex items-start gap-2">
-        <div className="w-10 shrink-0 flex items-center">{back}</div>
+        <div className="w-10 shrink-0 flex items-center pt-0.5">{back}</div>
         <div className="flex-1 min-w-0">
-          <h1 className="font-[family-name:var(--font-display)] text-[22px] leading-tight font-semibold tracking-tight text-[var(--ink)]">
+          <h1 className="font-[family-name:var(--font-display)] text-[22px] leading-[1.15] font-semibold tracking-tight text-[var(--ink)] pb-1">
             {title}
           </h1>
           {subtitle && (
-            <p className="text-[12px] text-[var(--ink-muted)] mt-0.5 leading-snug">
+            <p className="text-[12px] text-[var(--ink-muted)] mt-1 leading-snug">
               {subtitle}
             </p>
           )}
@@ -174,31 +174,51 @@ export function MacroBar({
   value,
   target,
   color,
+  icon,
 }: {
   name: string;
   value: number;
   target: number;
   color: string;
+  icon?: ReactNode;
 }) {
   const pct = Math.min(100, Math.round((value / Math.max(1, target)) * 100));
+  // Always render 4% minimum so the fill is visible even at 0 — looks broken otherwise.
+  const visualPct = value === 0 ? 4 : Math.max(pct, 4);
+  const over = pct >= 100;
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-muted)]">
-          {name}
-        </span>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5">
+          {icon}
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-muted)]">
+            {name}
+          </span>
+        </div>
         <div className="flex items-baseline gap-1.5 tabular text-[14px]">
           <span className="font-semibold text-[var(--ink)]">{value}g</span>
           <span className="text-[11px] text-[var(--ink-muted)]">/ {target}g</span>
         </div>
       </div>
-      <div className="progress-bar h-2" style={{ background: "var(--surface-strong)" }}>
+      <div
+        className="h-2 rounded-full overflow-hidden relative"
+        style={{ background: "var(--surface-strong)" }}
+      >
         <span
+          className="block h-full rounded-full transition-all duration-700"
           style={{
-            width: `${pct}%`,
-            background: color,
+            width: `${visualPct}%`,
+            background: over ? "var(--warning)" : color,
           }}
         />
+        {/* subtle target tick at 100% */}
+        {pct < 100 && pct > 10 && (
+          <span
+            aria-hidden
+            className="absolute top-[-2px] bottom-[-2px] w-px bg-[var(--ink-muted)] opacity-30"
+            style={{ left: "100%" }}
+          />
+        )}
       </div>
     </div>
   );

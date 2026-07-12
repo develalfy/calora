@@ -283,24 +283,45 @@ function HomeView({
         />
 
         {/* Macro bars */}
-        <div className="mt-7 space-y-3">
+        <div className="mt-7 space-y-3.5">
           <MacroBar
             name="Protein"
             value={todayTotals.protein_g}
             target={targets.protein_g}
             color={MACRO_PROTEIN}
+            icon={
+              <span
+                aria-hidden
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: MACRO_PROTEIN }}
+              />
+            }
           />
           <MacroBar
             name="Carbs"
             value={todayTotals.carbs_g}
             target={targets.carbs_g}
             color={MACRO_CARBS}
+            icon={
+              <span
+                aria-hidden
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: MACRO_CARBS }}
+              />
+            }
           />
           <MacroBar
             name="Fat"
             value={todayTotals.fat_g}
             target={targets.fat_g}
             color={MACRO_FAT}
+            icon={
+              <span
+                aria-hidden
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: MACRO_FAT }}
+              />
+            }
           />
         </div>
 
@@ -309,7 +330,7 @@ function HomeView({
           variant="primary"
           size="lg"
           full
-          className="mt-7"
+          className="mt-6"
           onClick={onCapture}
         >
           <IconCamera size={20} />
@@ -392,6 +413,12 @@ function HeroRing({
   const c = 2 * Math.PI * r;
   const offset = c - (pct / 100) * c;
 
+  // For empty state, render a tiny 2% dot at the top so the ring has SOMETHING
+  // visible — looks intentional rather than broken/missing.
+  const isEmpty = value === 0;
+  const displayOffset = isEmpty ? c - 0.02 * c : offset;
+  const dashArray = isEmpty ? `0.02 ${c}` : c;
+
   return (
     <div className="flex flex-col items-center">
       <div className="relative w-[200px] h-[200px]">
@@ -418,8 +445,8 @@ function HeroRing({
             stroke={overshoot ? "var(--warning)" : "url(#heroGrad)"}
             strokeWidth="14"
             strokeLinecap="round"
-            strokeDasharray={c}
-            strokeDashoffset={offset}
+            strokeDasharray={dashArray}
+            strokeDashoffset={displayOffset}
             transform="rotate(-90 100 100)"
             style={{
               transition:
@@ -428,8 +455,20 @@ function HeroRing({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-          <div className="font-[family-name:var(--font-display)] text-[44px] leading-none font-semibold tabular tracking-tight text-[var(--ink)]">
-            {value.toLocaleString()}
+          <div
+            className={
+              "font-[family-name:var(--font-display)] font-semibold tabular tracking-tight text-[var(--ink)] " +
+              (isEmpty ? "text-[28px] text-[var(--ink-muted)]" : "text-[44px] leading-none")
+            }
+          >
+            {isEmpty ? (
+              <span className="inline-flex items-center gap-1">
+                <IconLeaf size={20} className="opacity-50" />
+                ready
+              </span>
+            ) : (
+              value.toLocaleString()
+            )}
           </div>
           <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] tabular mt-1.5">
             of {goal.toLocaleString()} kcal
@@ -450,7 +489,9 @@ function HeroRing({
             {(goal - value).toLocaleString()} kcal left
           </span>
         ) : (
-          <span style={{ color: "var(--success)" }}>Goal hit · nice</span>
+          <span className="inline-flex items-center gap-1" style={{ color: "var(--success)" }}>
+            <IconCheck size={14} /> Goal hit · nice
+          </span>
         )}
       </div>
     </div>
@@ -476,11 +517,18 @@ function MealCard({
       : entry.items.length === 0
         ? "No items"
         : `${entry.items.length} items`;
+  // First-letter avatar from the meal type + color hint.
+  const initial = entry.meal.charAt(0).toUpperCase();
+  const initialsBg =
+    entry.meal === "breakfast" ? "#fbbf24"
+    : entry.meal === "lunch" ? "#ff6f4d"
+    : entry.meal === "dinner" ? "#a78bfa"
+    : "#86efac";
 
   return (
     <li>
       <Card
-        className="p-3 flex gap-3 items-center cursor-pointer active:scale-[0.99] transition"
+        className="p-2.5 flex gap-3 items-center cursor-pointer active:scale-[0.99] transition"
         onClick={onOpen}
         role="button"
         tabIndex={0}
@@ -491,10 +539,11 @@ function MealCard({
           }
         }}
       >
-        {/* Thumbnail or fallback */}
+        {/* Thumbnail or fallback avatar */}
         <div
-          className="w-12 h-12 rounded-[12px] shrink-0 overflow-hidden bg-[var(--surface-soft)] flex items-center justify-center text-[20px]"
+          className="w-11 h-11 rounded-[11px] shrink-0 overflow-hidden flex items-center justify-center"
           aria-hidden
+          style={!entry.imageDataUrl ? { background: `color-mix(in srgb, ${initialsBg} 22%, var(--surface-soft))` } : {}}
         >
           {entry.imageDataUrl ? (
             <img
@@ -503,8 +552,11 @@ function MealCard({
               className="w-full h-full object-cover"
             />
           ) : (
-            <span className="text-[var(--ink-muted)]">
-              {entry.source === "photo" ? <IconCamera size={20} /> : <IconLeaf size={20} />}
+            <span
+              className="font-[family-name:var(--font-display)] text-[16px] font-semibold"
+              style={{ color: initialsBg }}
+            >
+              {initial}
             </span>
           )}
         </div>
@@ -518,26 +570,31 @@ function MealCard({
           <div className="text-[14px] font-medium text-[var(--ink)] truncate mt-0.5">
             {summary}
           </div>
-          <div className="text-[11px] tabular text-[var(--ink-muted)] mt-1">
-            P{entry.totals.protein_g}g · C{entry.totals.carbs_g}g · F
-            {entry.totals.fat_g}g
+          <div className="flex items-center gap-1.5 text-[11px] tabular text-[var(--ink-muted)] mt-1">
+            <span style={{ color: MACRO_PROTEIN }}>P{entry.totals.protein_g}g</span>
+            <span className="text-[var(--hairline)]">·</span>
+            <span style={{ color: MACRO_CARBS }}>C{entry.totals.carbs_g}g</span>
+            <span className="text-[var(--hairline)]">·</span>
+            <span style={{ color: MACRO_FAT }}>F{entry.totals.fat_g}g</span>
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-1">
-          <span className="font-semibold text-[15px] tabular text-[var(--ink)]">
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className="font-semibold text-[15px] tabular text-[var(--ink)] leading-none">
             {entry.totals.calories}
+            <span className="text-[11px] font-normal text-[var(--ink-muted)] ml-0.5">
+              kcal
+            </span>
           </span>
-          <span className="text-[10px] text-[var(--ink-muted)] -mt-0.5">kcal</span>
           <button
             onClick={(e) => {
               e.stopPropagation();
               if (confirm("Remove this meal?")) onRemove();
             }}
-            className="mt-1 text-[var(--ink-muted)] hover:text-[var(--danger)] transition"
+            className="text-[var(--ink-muted)] hover:text-[var(--danger)] transition"
             aria-label="Remove meal"
           >
-            <IconClose size={16} />
+            <IconClose size={14} />
           </button>
         </div>
       </Card>
@@ -700,7 +757,13 @@ function CaptureView({
         ) : (
           <button
             disabled={busy}
-            onClick={() => fileRef.current?.click()}
+            onClick={() => {
+              // Smart default: mobile gets camera, desktop gets file picker.
+              // Both inputs exist; this picks the right one.
+              const mobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+              if (mobile) cameraRef.current?.click();
+              else fileRef.current?.click();
+            }}
             className={[
               "w-full aspect-[4/3] rounded-[20px] border-2 border-dashed",
               "border-[var(--accent)] bg-[var(--accent-soft)]",
@@ -722,35 +785,37 @@ function CaptureView({
                   <IconCamera size={24} />
                 </div>
                 <span className="text-[15px] font-semibold text-[var(--ink)]">
-                  Snap or upload a photo
+                  Tap to add a photo
                 </span>
                 <span className="text-[12px] text-[var(--ink-muted)]">
-                  Camera opens on mobile. Files on desktop.
+                  Camera on mobile · files on desktop
                 </span>
               </>
             )}
           </button>
         )}
 
-        {/* Two explicit actions — takes the guesswork out of mobile vs desktop */}
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => cameraRef.current?.click()}
-            disabled={busy}
-            className="flex items-center justify-center gap-1.5 py-2.5 rounded-[12px] bg-[var(--surface-card)] border border-[var(--hairline)] text-[13px] font-medium text-[var(--ink)] hover:bg-[var(--surface-strong)] active:scale-[0.98] transition disabled:opacity-50"
-          >
-            <IconCamera size={14} /> Take photo
-          </button>
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={busy}
-            className="flex items-center justify-center gap-1.5 py-2.5 rounded-[12px] bg-[var(--surface-card)] border border-[var(--hairline)] text-[13px] font-medium text-[var(--ink)] hover:bg-[var(--surface-strong)] active:scale-[0.98] transition disabled:opacity-50"
-          >
-            <IconUpload size={14} /> Choose file
-          </button>
-        </div>
+        {/* Explicit secondary actions — users who want to be specific */}
+        {!photoPreview && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => cameraRef.current?.click()}
+              disabled={busy}
+              className="flex items-center justify-center gap-1.5 py-2.5 rounded-[12px] bg-[var(--surface-soft)] hover:bg-[var(--surface-strong)] text-[12px] font-medium text-[var(--ink-soft)] active:scale-[0.98] transition disabled:opacity-50"
+            >
+              <IconCamera size={13} /> Take photo
+            </button>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+              className="flex items-center justify-center gap-1.5 py-2.5 rounded-[12px] bg-[var(--surface-soft)] hover:bg-[var(--surface-strong)] text-[12px] font-medium text-[var(--ink-soft)] active:scale-[0.98] transition disabled:opacity-50"
+            >
+              <IconUpload size={13} /> Choose file
+            </button>
+          </div>
+        )}
 
         {err && (
           <div
@@ -854,7 +919,7 @@ function CaptureView({
           onClick={handleText}
         >
           <IconSparkle size={16} />
-          Estimate from text
+          {text.trim() ? "Estimate from text" : "Type something above to estimate"}
         </Button>
       </section>
     </>
@@ -1338,14 +1403,21 @@ function HistoryView({
       />
 
       <div className="px-5 pb-5 flex-1">
-        {/* Bar chart */}
+        {/* Bar chart — proportional bars sized relative to the week max, with
+            kcal values on the y-axis, day names below. */}
         <Card className="p-4 mb-4">
-          <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)] mb-3">
-            Daily totals
+          <div className="flex items-baseline justify-between mb-4">
+            <div className="text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)]">
+              Daily totals
+            </div>
+            <div className="text-[10px] text-[var(--ink-muted)] tabular">
+              max {maxDayTotal.toLocaleString()} kcal
+            </div>
           </div>
-          <div className="flex items-stretch justify-between gap-1.5 h-[140px]">
+          <div className="flex items-stretch justify-between gap-2 h-[140px] pt-6 pb-1">
             {days.map((d) => {
-              const h = Math.max(6, (d.total / maxDayTotal) * 100);
+              const ratio = maxDayTotal > 0 ? d.total / maxDayTotal : 0;
+              const h = Math.max(6, ratio * 100); // min 6% so empty days still render a stub
               const label =
                 d.dayStart === startOfDay(Date.now())
                   ? "Today"
@@ -1358,15 +1430,22 @@ function HistoryView({
               return (
                 <div
                   key={d.dayStart}
-                  className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0"
+                  className="flex-1 flex flex-col items-center justify-end min-w-0 relative"
+                  title={`${label} ${dateLabel}: ${d.total.toLocaleString()} kcal`}
                 >
-                  <span className="text-[10px] tabular font-medium text-[var(--ink-soft)] h-4 truncate w-full text-center">
-                    {d.total || "·"}
+                  {/* number above the bar (inside the chart area) */}
+                  <span
+                    className={
+                      "absolute top-[-22px] left-1/2 -translate-x-1/2 text-[10px] tabular font-semibold whitespace-nowrap " +
+                      (hasData ? "text-[var(--ink)]" : "text-[var(--ink-muted)]")
+                    }
+                  >
+                    {hasData ? d.total.toLocaleString() : "—"}
                   </span>
                   <div
-                    className="relative w-full transition-all duration-700 rounded-t-[6px]"
+                    className="w-full transition-all duration-700 rounded-t-[6px] relative"
                     style={{
-                      height: hasData ? `${h}%` : "6px",
+                      height: `${h}%`,
                       background: hasData
                         ? isToday
                           ? "var(--accent)"
@@ -1380,12 +1459,37 @@ function HistoryView({
                       minHeight: "4px",
                     }}
                   />
-                  <div className="text-[10px] font-medium text-[var(--ink-muted)] truncate w-full text-center mt-0.5">
+                </div>
+              );
+            })}
+          </div>
+          {/* Day labels row — separate so it doesn't get crushed by flex stretching */}
+          <div className="flex items-stretch justify-between gap-2 mt-2 pt-2 border-t border-[var(--hairline-soft)]">
+            {days.map((d) => {
+              const isToday = d.dayStart === startOfDay(Date.now());
+              const label =
+                d.dayStart === startOfDay(Date.now())
+                  ? "Today"
+                  : new Date(d.dayStart).toLocaleDateString([], {
+                      weekday: "short",
+                    });
+              const dateLabel = new Date(d.dayStart).getDate();
+              return (
+                <div
+                  key={d.dayStart}
+                  className="flex-1 flex flex-col items-center min-w-0 text-center"
+                >
+                  <span
+                    className={
+                      "text-[10px] font-medium truncate w-full " +
+                      (isToday ? "text-[var(--accent)]" : "text-[var(--ink-muted)]")
+                    }
+                  >
                     {label}
-                  </div>
-                  <div className="text-[9px] text-[var(--ink-muted)] tabular">
+                  </span>
+                  <span className="text-[9px] text-[var(--ink-muted)] tabular">
                     {dateLabel}
-                  </div>
+                  </span>
                 </div>
               );
             })}
@@ -1599,7 +1703,7 @@ function SettingsView({
           </div>
         </Card>
 
-        {/* Save button — disabled when unchanged */}
+        {/* Save button — shows different state based on changes */}
         <Button
           variant="primary"
           size="lg"
@@ -1607,9 +1711,23 @@ function SettingsView({
           disabled={saved || goal < 800 || goal > 5000}
           onClick={() => onSave({ goalCalories: goal })}
         >
-          <IconCheck size={18} />
-          Save goal
+          {saved ? (
+            <>
+              <IconCheck size={18} />
+              All set — current goal
+            </>
+          ) : (
+            <>
+              <IconCheck size={18} />
+              Save goal
+            </>
+          )}
         </Button>
+        {saved && (
+          <p className="text-center text-[11px] text-[var(--ink-muted)] -mt-3">
+            Move the slider to change your goal.
+          </p>
+        )}
 
         {/* About / disclaimer */}
         <details className="rounded-[16px] bg-[var(--surface-soft)] px-4 py-3">
