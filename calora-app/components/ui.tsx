@@ -94,15 +94,15 @@ export function PageHeader({
   subtitle?: ReactNode;
 }) {
   return (
-    <header className="px-5 pt-5 pb-3">
-      <div className="flex items-start gap-2">
-        <div className="w-10 shrink-0 flex items-center pt-0.5">{back}</div>
+    <header className="px-5 pt-5 pb-4">
+      <div className="flex items-start gap-3">
+        <div className="w-9 shrink-0 flex items-center pt-1">{back}</div>
         <div className="flex-1 min-w-0">
-          <h1 className="font-[family-name:var(--font-display)] text-[22px] leading-[1.15] font-semibold tracking-tight text-[var(--ink)] pb-1">
+          <h1 className="font-[family-name:var(--font-display)] text-[22px] leading-[1.4] font-semibold tracking-[-0.01em] text-[var(--ink)] mb-1.5">
             {title}
           </h1>
           {subtitle && (
-            <p className="text-[12px] text-[var(--ink-muted)] mt-1 leading-snug">
+            <p className="text-[12px] text-[var(--ink-muted)] leading-snug -mt-0.5">
               {subtitle}
             </p>
           )}
