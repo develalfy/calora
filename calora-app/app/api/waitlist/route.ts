@@ -1,88 +1,32 @@
 // POST /api/waitlist
-// Append an email to a local JSONL file. For the MVP waitlist this is fine —
-// the Dokploy deployment keeps the container's writable layer across most
-// updates (only a full image rebuild wipes it, and that's rare).
+// Lightweight endpoint that validates and records the signup, but doesn't
+// persist anywhere we don't already control. The deployed container runs as
+// the unprivileged `nextjs` user and has no writable paths we can rely on,
+// and we can't inject GitHub/Telegram tokens into the runtime without admin
+// access to Dokploy's env config.
 //
-// Why not GitHub-as-DB? Would need a server-side token we can't inject through
-// the Dokploy API without admin creds. Why not Supabase? Avoids the "create an
-// account + add env vars" round trip. Plain local file is the lowest-friction
-// path that ships today.
+// What this route does:
+//   1. Validates the email shape + length
+//   2. Logs to the server console (visible in Dokploy logs)
+//   3. Tries to also POST to a TELEGRAM_WEBHOOK_URL if env-set (operator can
+//      wire it via Dokploy env later without code change)
+//   4. Returns ok with a per-process monotonic counter so the UI can show
+//      "you're #N" for the session. Counter resets on restart — fine for the
+//      pre-launch demand signal use case, doesn't pretend to be a DB.
 //
-// Migration path: when signups exceed ~500 OR we add auth, swap this for a
-// Supabase free-tier table. Same POST/GET shape, ~30 min of work.
+// Real persistence will land with Stripe (Phase 2). Until then this is a
+// honest "we heard you" page — users see success, founder sees log lines,
+// conversion signal is captured without overpromising storage durability.
 
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 
 export const runtime = "nodejs";
-// Persist inside the app dir (writable in Dokploy containers). If the path
-// isn't writable, we fall back to /tmp so the route doesn't 500.
-const DATA_DIR = process.env.CALORA_DATA_DIR || path.join(process.cwd(), "data");
-const FILE = path.join(DATA_DIR, "waitlist.jsonl");
+export const dynamic = "force-dynamic";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-async function ensureFile(): Promise<void> {
-  try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    await fs.access(FILE);
-  } catch {
-    // File doesn't exist — create empty
-    try {
-      await fs.writeFile(FILE, "", "utf-8");
-    } catch {
-      // Fall back to /tmp if the configured dir is read-only
-      const fallback = "/tmp/calora-waitlist.jsonl";
-      try {
-        await fs.writeFile(fallback, "", "utf-8");
-      } catch {
-        /* give up — caller will see the error */
-      }
-    }
-  }
-}
-
-async function readLines(): Promise<string[]> {
-  await ensureFile();
-  // Try the primary file, then the /tmp fallback.
-  const candidates = [FILE, "/tmp/calora-waitlist.jsonl"];
-  for (const p of candidates) {
-    try {
-      const raw = await fs.readFile(p, "utf-8");
-      return raw.split("\n").filter(Boolean);
-    } catch {
-      /* try next */
-    }
-  }
-  return [];
-}
-
-async function appendLine(line: string): Promise<{ total: number; alreadyThere: boolean }> {
-  const lines = await readLines();
-  const email = line.split(",")[0].trim().toLowerCase();
-  if (lines.some((l) => l.split(",")[0].trim().toLowerCase() === email)) {
-    return { total: lines.length, alreadyThere: true };
-  }
-  lines.push(line);
-  const payload = lines.join("\n") + "\n";
-  // Write to whichever path we successfully read from (or primary if empty).
-  const target = lines.length === 1 ? FILE : await pickWritablePath();
-  await fs.writeFile(target, payload, "utf-8");
-  return { total: lines.length, alreadyThere: false };
-}
-
-async function pickWritablePath(): Promise<string> {
-  for (const p of [FILE, "/tmp/calora-waitlist.jsonl"]) {
-    try {
-      await fs.access(p, fs.constants.W_OK);
-      return p;
-    } catch {
-      /* try next */
-    }
-  }
-  return FILE; // best-effort, will throw on write
-}
+// In-process monotonic counter. Process-scoped, fine for "you're #N today".
+let _counter = 0;
 
 export async function POST(req: NextRequest) {
   let body: { email?: string; source?: string };
@@ -98,36 +42,42 @@ export async function POST(req: NextRequest) {
   const source = (body.source || "landing")
     .slice(0, 64)
     .replace(/[^\w-]/g, "_");
-  const ts = new Date().toISOString();
-  const line = `${email},${ts},${source}`;
+  _counter += 1;
 
-  try {
-    const { total, alreadyThere } = await appendLine(line);
-    return NextResponse.json({ ok: true, count: total, alreadyThere });
-  } catch (e) {
-    const msg = (e as Error).message;
-    console.error("waitlist append failed:", msg);
-    return NextResponse.json(
-      { error: "Could not save — try again later" },
-      { status: 502 },
-    );
+  // 1. Always log to server stdout — visible in `dokploy logs calora`.
+  //    The operator can grep these and bulk-import to Mailchimp/etc. later.
+  console.log(`[waitlist] #${_counter} ${email} (source=${source})`);
+
+  // 2. Optional: forward to a Telegram bot if env-configured. Operator sets
+  //    TELEGRAM_BOT_TOKEN + TELEGRAM_WAITLIST_CHAT_ID in Dokploy env. Failures
+  //    here are non-fatal — the local log line is the source of truth.
+  const tgToken = process.env.TELEGRAM_BOT_TOKEN;
+  const tgChat = process.env.TELEGRAM_WAITLIST_CHAT_ID;
+  if (tgToken && tgChat) {
+    try {
+      await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: tgChat,
+          text: `🟢 Calora Pro waitlist\n${email}\nsource: ${source}`,
+        }),
+      });
+    } catch {
+      /* non-fatal */
+    }
   }
+
+  return NextResponse.json({ ok: true, position: _counter });
 }
 
-// GET returns the current count (no PII — just a number, used by the landing
-// page "X people on the waitlist" chip).
+// GET — returns the in-process counter so the UI can show a social-proof chip.
+// This number is per-process (resets on deploy), so the chip is best-effort —
+// it'll underreport after a redeploy. That's acceptable for the MVP and avoids
+// pretending we have durable storage.
 export async function GET() {
-  try {
-    const lines = await readLines();
-    return NextResponse.json(
-      { count: lines.length },
-      {
-        headers: {
-          "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
-        },
-      },
-    );
-  } catch {
-    return NextResponse.json({ count: 0 });
-  }
+  return NextResponse.json(
+    { count: _counter },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
