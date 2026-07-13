@@ -8,6 +8,9 @@
 // Pricing is a placeholder pending the market analysis landing. The page
 // intentionally avoids fake scarcity, dark patterns, and testimonial fabrication.
 
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { IconCamera, IconCheck, IconChevronRight, IconLeaf, IconSparkle } from "@/components/Icons";
 
@@ -86,6 +89,13 @@ export default function LandingPage() {
         <p className="mt-6 text-[12px] text-[var(--ink-muted)]">
           No signup. Data stays on your device. Works offline.
         </p>
+
+        {/* ─── Pro waitlist capture ───
+            Pre-launch demand signal: collects emails before we wire Stripe.
+            Shown once a real signup flow exists; this is the cheaper experiment. */}
+        <div className="mt-10">
+          <WaitlistForm />
+        </div>
       </section>
 
       {/* ─── Demo screenshot block ─── */}
@@ -441,5 +451,118 @@ function Faq({ q, children }: { q: string; children: React.ReactNode }) {
         {children}
       </p>
     </div>
+  );
+}
+
+// ─── WaitlistForm ───────────────────────────────────────────────────────────
+// Captures pre-launch email interest for Calora Pro. Posts to /api/waitlist,
+// which appends to a JSONL file in the running container (no external
+// service needed for the MVP). Once we hit Stripe, the form gets replaced
+// with a Checkout button — same shape, same position.
+function WaitlistForm() {
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState<
+    "idle" | "submitting" | "ok" | "duplicate" | "error"
+  >("idle");
+  const [count, setCount] = useState<number | null>(null);
+
+  // Fetch the current count once on mount so we can show "Join 47 others".
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/waitlist", { method: "GET" })
+      .then((r) => (r.ok ? r.json() : { count: 0 }))
+      .then((j) => {
+        if (alive) setCount(typeof j.count === "number" ? j.count : 0);
+      })
+      .catch(() => {
+        if (alive) setCount(0);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (state === "submitting") return;
+    const v = email.trim();
+    if (!v) return;
+    setState("submitting");
+    try {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 10_000);
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: v, source: "landing_hero" }),
+        signal: ac.signal,
+      });
+      clearTimeout(t);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        if (data.alreadyThere) setState("duplicate");
+        else {
+          setState("ok");
+          if (typeof data.count === "number") setCount(data.count);
+        }
+      } else {
+        setState("error");
+      }
+    } catch {
+      setState("error");
+    }
+  }
+
+  if (state === "ok" || state === "duplicate") {
+    return (
+      <div className="max-w-md mx-auto rounded-2xl bg-[var(--surface-card)] border border-[var(--hairline)] px-5 py-4 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-full bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center shrink-0">
+          <IconCheck size={18} />
+        </div>
+        <div className="text-left">
+          <p className="text-[14px] font-semibold text-[var(--ink)]">
+            {state === "ok" ? "You're on the list." : "Already on the list."}
+          </p>
+          <p className="text-[12px] text-[var(--ink-soft)]">
+            We'll email you when Pro opens — usually within a few weeks.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="max-w-md mx-auto rounded-2xl bg-[var(--surface-card)] border border-[var(--hairline)] p-2.5 flex flex-col sm:flex-row gap-2 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.08)]"
+    >
+      <input
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        required
+        placeholder="you@example.com"
+        value={email}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          if (state === "error") setState("idle");
+        }}
+        disabled={state === "submitting"}
+        aria-label="Email for Pro waitlist"
+        className="flex-1 px-4 py-3 rounded-xl bg-transparent text-[var(--ink)] placeholder:text-[var(--ink-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 disabled:opacity-60"
+      />
+      <button
+        type="submit"
+        disabled={state === "submitting"}
+        className="px-5 py-3 rounded-xl bg-[var(--accent)] text-white text-[14px] font-semibold hover:bg-[var(--accent-hover)] active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
+      >
+        {state === "submitting" ? "Adding…" : state === "error" ? "Try again" : "Notify me when Pro launches"}
+      </button>
+      {typeof count === "number" && count > 0 && (
+        <p className="basis-full text-center text-[11px] text-[var(--ink-muted)] mt-1">
+          {count} {count === 1 ? "person has" : "people have"} already signed up
+        </p>
+      )}
+    </form>
   );
 }
