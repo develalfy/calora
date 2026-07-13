@@ -215,14 +215,14 @@ export default function HomePage() {
           <CaptureView
             onCancel={onHome}
             onEstimate={(req) => {
-              // Enforce free-tier limit before hitting the API
+              // Enforce free-tier limit before kicking off the API call.
+              // The scan is consumed INSIDE LoadingView.onDone — only counted on success —
+              // so a failed/timeout request doesn't burn a free scan.
               if (isOverFreeLimit()) {
                 track("free_limit_hit");
                 setUpgradeOpen(true);
                 return;
               }
-              recordScan();
-              setScanRemaining(scansRemaining());
               track("scan_start", { hasImage: !!req.image });
               sessionStorage.setItem(
                 "calora:pending-estimate",
@@ -237,6 +237,10 @@ export default function HomePage() {
         {view === "loading" && (
           <LoadingView
             onDone={(result) => {
+              // Scan counted ONLY after the API returns a usable result — a timeout or
+              // 5xx from upstream does not consume a free scan, so the user can retry.
+              recordScan();
+              setScanRemaining(scansRemaining());
               track("scan_complete", {
                 items: result.items.length,
                 confidence: result.confidence,
@@ -1157,18 +1161,32 @@ function LoadingView({
         meal: MealType;
       };
 
+      // Client-side fetch timeout — fails fast so the user can retry. Server cap is 90s but
+      // Cloudflare free proxy times out at 100s; stay well under both.
+      const CLIENT_FETCH_TIMEOUT_MS = 50_000;
+
       const tryOnce = async (attempt: number): Promise<void> => {
-        const res = await fetch("/api/estimate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            image: req.image,
-            text: req.text,
-            context: { meal: req.meal },
-          }),
-        });
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), CLIENT_FETCH_TIMEOUT_MS);
+        let res: Response;
+        try {
+          res = await fetch("/api/estimate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              image: req.image,
+              text: req.text,
+              context: { meal: req.meal },
+            }),
+            signal: ac.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
         if (!res.ok) {
-          if (attempt < 1) return tryOnce(attempt + 1);
+          // 429 (rate limit) and 5xx → worth a single retry. 4xx (except 429) → fail.
+          const retriable = res.status === 429 || res.status >= 500;
+          if (retriable && attempt < 1) return tryOnce(attempt + 1);
           throw new Error(`HTTP ${res.status}`);
         }
         const data = await res.json();

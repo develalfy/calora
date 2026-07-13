@@ -1,37 +1,66 @@
 // POST /api/estimate
 // Accepts image OR text, returns structured calorie/macro estimate.
+//
+// Provider policy (2026-07-13): only MiniMax models are permitted.
+//   - minimax/minimax-m3  — multimodal (text+image+video → text), reasoning. Default.
+//   - minimax/minimax-m2.7 — text-only, faster, non-multimodal. Fallback for text requests.
+// Image requests fall back to M3 itself (M2.7 can't see images).
+//
+// Latency targets: M3 text ≈ 5-15s, M3 image ≈ 10-30s. Cloudflare free proxy times out at 100s;
+// we cap server work at 90s and return 504 fast so the client can retry rather than hanging.
 
 import { NextRequest, NextResponse } from "next/server";
 import type { EstimateRequest, EstimateResponse } from "@/lib/types";
 import { rateLimit, clientKey } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
-export const maxDuration = 120; // seconds — covers 3 retry attempts
+// 90s server budget — one M3 retry (45s × 2). Cloudflare free proxy 524s at 100s so stay under.
+export const maxDuration = 90;
 
-// Per-IP rate limits. These protect the OpenRouter budget from abuse.
-// Authenticated users will have higher limits (post-MVP).
-const FREE_TIER_RPM = 10; // 10 requests/min per IP — covers normal usage + retries
-const FREE_TIER_RPH = 100; // 100 requests/hour per IP — hard ceiling on scraping
+// Per-IP rate limits. Protect the OpenRouter budget from abuse.
+const FREE_TIER_RPM = 10;  // requests/min per IP — covers normal usage + retries
+const FREE_TIER_RPH = 100; // requests/hour per IP — hard ceiling on scraping
 
-const PROMPT = `Return ONLY valid JSON (no markdown, no preamble, no trailing text). Schema:
-{"items":[{"name":"<item>","calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}],"totals":{"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>},"confidence":"high"|"medium"|"low","notes":"<one line>"}
-USDA portion sizes. Round calories to nearest 5. If uncertain, lower confidence. Break out each item separately. Meal: {meal}.`;
+// The only models this app is allowed to call.
+const M3 = "minimax/minimax-m3";
+const M27 = "minimax/minimax-m2.7";
 
-// Reasoning models (e.g. minimax/minimax-m3) bleed their thinking into the response and rarely close
-// their <think>... block before the JSON. Extract the JSON robustly: skip any leading prose, then
-// parse from the first balanced { ... } block.
-function extractJson(text: string): string {
-  // Strip any `` ... `` fence if present
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+// Per-model upstream timeout. We use AbortController on the upstream fetch so a stuck M3
+// request fails fast instead of dragging the whole route toward Cloudflare's 100s ceiling.
+const UPSTREAM_TIMEOUT_MS = 45_000;
+
+const PROMPT = `Return ONLY valid JSON (no markdown, no preamble, no trailing text, no <think> tags).
+Schema:
+{"items":[{"name":"<item>","calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}],
+"totals":{"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>},
+"confidence":"high"|"medium"|"low","notes":"<one line>"}
+USDA portion sizes. Round calories to nearest 5. If uncertain, lower confidence. Break out each item separately.
+Meal: {meal}.`;
+
+// Reasoning models bleed their thinking into the response. Extract the JSON robustly:
+//   1. Strip any text after the LAST </think> tag (reasoning tail may include JSON-in-prose).
+//   2. Strip ``` ``` fences if present.
+//   3. Walk from the first { to find the matching balanced }.
+// We do NOT strip leading <think>…<think> blocks because some M3 responses put the JSON BEFORE
+// the closing tag and some AFTER — handling only the suffix is the safe bet.
+function extractJson(raw: string): string {
+  // 1. Drop everything up to and including the last </think> if present.
+  let s: string = raw;
+  const thinkEnd = s.lastIndexOf("</think>");
+  if (thinkEnd >= 0) s = s.slice(thinkEnd + "</think>".length);
+
+  // 2. Strip ``` ... ``` fence if present.
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenced) return fenced[1].trim();
-  // Find the first { and walk forward to find the matching close brace
-  const start = text.indexOf("{");
-  if (start < 0) return text.trim();
+
+  // 3. Find first { and walk forward to balanced }.
+  const start = s.indexOf("{");
+  if (start < 0) return s.trim();
   let depth = 0;
   let inStr = false;
   let escape = false;
-  for (let i = start; i < text.length; i++) {
-    const c = text[i];
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
     if (escape) { escape = false; continue; }
     if (c === "\\") { escape = true; continue; }
     if (c === '"') { inStr = !inStr; continue; }
@@ -39,10 +68,10 @@ function extractJson(text: string): string {
     if (c === "{") depth++;
     else if (c === "}") {
       depth--;
-      if (depth === 0) return text.slice(start, i + 1);
+      if (depth === 0) return s.slice(start, i + 1);
     }
   }
-  return text.slice(start);
+  return s.slice(start);
 }
 
 export async function POST(req: NextRequest) {
@@ -103,25 +132,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Build the model chain for this request.
+  //   - Image request → M3 only (M2.7 is text-only, can't see images).
+  //   - Text request  → M3 first, fall back to M2.7 on hard failure (5xx/timeout/429).
+  // CALORA_MODEL env var can force a single model (for testing).
   function pickModel(req: NextRequest): string[] {
     if (process.env.CALORA_MODEL) return [process.env.CALORA_MODEL];
-    const requested = req.nextUrl.searchParams.get("model");
-    // Default chain: Gemini 2.5 Flash (~1.5s, JSON-clean, cheapest), with fallbacks if 402/429 from provider.
-    // Opt-ins:
-    //   ?model=minimax → minimax/minimax-m3 (reasoning, ~10s, more accurate for ambiguous foods)
-    //   ?model=sonnet  → anthropic/claude-sonnet-4 (most accurate, $$$)
-    //   ?model=haiku   → anthropic/claude-3-haiku
-    if (requested === "sonnet") return ["anthropic/claude-sonnet-4"];
-    if (requested === "haiku") return ["anthropic/claude-3-haiku"];
-    if (requested === "minimax") return ["minimax/minimax-m3"];
-    // Default fallback chain (tried in order on 402/5xx)
-    return [
-      process.env.CALORA_DEFAULT_MODEL ?? "google/gemini-2.5-flash",
-      "minimax/minimax-m3",
-    ];
+    if (body.image) return [M3];
+    return [M3, M27];
   }
   const models = pickModel(req);
-  const model = models[0]; // for logging (_meta echo)
 
   const meal = body.context?.meal ?? "meal";
 
@@ -143,12 +163,14 @@ export async function POST(req: NextRequest) {
   }
 
   const t0 = Date.now();
-  // Try each model in order; on 402/429/5xx from the provider, fall through to the next.
-  // For opt-ins (single model), only one entry is tried — fails if it's down.
   let lastErr = "";
   let lastStatus: number | null = null;
   let lastBody = "";
+
   for (const m of models) {
+    // AbortController so a stuck upstream can't drag us past 45s.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS);
     try {
       const orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -164,7 +186,10 @@ export async function POST(req: NextRequest) {
           max_tokens: 1200,
           temperature: 0.2,
         }),
+        signal: ac.signal,
       });
+      clearTimeout(timer);
+
       if (orRes.ok) {
         const data = await orRes.json();
         const content = data.choices?.[0]?.message?.content;
@@ -173,7 +198,6 @@ export async function POST(req: NextRequest) {
           lastStatus = orRes.status;
           continue;
         }
-        // Parse JSON safely below; pass the parsed object forward
         const cleaned = extractJson(content);
         let parsed: EstimateResponse;
         try {
@@ -182,7 +206,6 @@ export async function POST(req: NextRequest) {
           lastErr = `JSON parse (model=${m}): ${(e as Error).message}`;
           lastStatus = 502;
           lastBody = cleaned.slice(0, 500);
-          // Try next model in chain
           continue;
         }
         if (!parsed.items || !parsed.totals) {
@@ -196,18 +219,25 @@ export async function POST(req: NextRequest) {
           _meta: { latency_ms: Date.now() - t0, model: m },
         });
       }
-      // Non-OK: record and try next model unless it's a 4xx that's clearly ours (400/401/403)
+
+      // Non-OK upstream: record and fall through unless it's a client-side 4xx (our fault).
       lastStatus = orRes.status;
       lastBody = await orRes.text();
       lastErr = `AI provider ${orRes.status} (model=${m})`;
       if (orRes.status === 400 || orRes.status === 401 || orRes.status === 403) {
-        // Don't fall through for client errors
         break;
       }
-      // 402/429/5xx → continue to next model
       console.warn(`Model ${m} failed ${orRes.status}, falling through to next`);
     } catch (e) {
-      lastErr = `Network error (model=${m}): ${(e as Error).message}`;
+      clearTimeout(timer);
+      const err = e as Error;
+      if (err.name === "AbortError") {
+        lastErr = `timeout after ${UPSTREAM_TIMEOUT_MS}ms (model=${m})`;
+        lastStatus = 504;
+        console.warn(`Model ${m} timed out, ${models.length > 1 ? "falling through" : "failing"}`);
+      } else {
+        lastErr = `Network error (model=${m}): ${err.message}`;
+      }
     }
   }
 

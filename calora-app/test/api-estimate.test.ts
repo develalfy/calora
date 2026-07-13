@@ -247,23 +247,8 @@ describe("POST /api/estimate — model selection", () => {
     expect(body.model).toBe("custom/model");
   });
 
-  it("?model=sonnet uses claude-sonnet-4", async () => {
-    fetchMock.mockResolvedValueOnce(
-      orSuccess(
-        JSON.stringify({
-          items: [{ name: "X", calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 }],
-          totals: { calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 },
-          confidence: "low",
-          notes: "",
-        }),
-      ),
-    );
-    await POST(jsonRequest({ text: "x" }, "?model=sonnet"));
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.model).toBe("anthropic/claude-sonnet-4");
-  });
-
-  it("default chain is [gemini-2.5-flash, minimax-m3]", async () => {
+  it("CALORA_MODEL env override forces a single model", async () => {
+    process.env.CALORA_MODEL = "custom/model";
     fetchMock.mockResolvedValueOnce(
       orSuccess(
         JSON.stringify({
@@ -276,7 +261,64 @@ describe("POST /api/estimate — model selection", () => {
     );
     await POST(jsonRequest({ text: "x" }));
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.model).toBe("google/gemini-2.5-flash");
+    expect(body.model).toBe("custom/model");
+    delete process.env.CALORA_MODEL;
+  });
+
+  it("default text chain is [minimax/minimax-m3, minimax/minimax-m2.7]", async () => {
+    fetchMock.mockResolvedValueOnce(
+      orSuccess(
+        JSON.stringify({
+          items: [{ name: "X", calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 }],
+          totals: { calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 },
+          confidence: "low",
+          notes: "",
+        }),
+      ),
+    );
+    await POST(jsonRequest({ text: "x" }));
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.model).toBe("minimax/minimax-m3");
+  });
+
+  it("falls back to minimax/minimax-m2.7 when M3 fails", async () => {
+    // First call (M3) returns 500 → fallback
+    fetchMock.mockResolvedValueOnce(
+      new Response("provider boom", { status: 500 }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      orSuccess(
+        JSON.stringify({
+          items: [{ name: "X", calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 }],
+          totals: { calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 },
+          confidence: "low",
+          notes: "",
+        }),
+      ),
+    );
+    const res = await POST(jsonRequest({ text: "x" }));
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const body1 = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const body2 = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(body1.model).toBe("minimax/minimax-m3");
+    expect(body2.model).toBe("minimax/minimax-m2.7");
+  });
+
+  it("image request uses M3 only (M2.7 is text-only)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      orSuccess(
+        JSON.stringify({
+          items: [{ name: "X", calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 }],
+          totals: { calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 },
+          confidence: "low",
+          notes: "",
+        }),
+      ),
+    );
+    await POST(jsonRequest({ image: "data:image/png;base64,iVBOR" }));
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.model).toBe("minimax/minimax-m3");
   });
 });
 
