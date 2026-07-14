@@ -15,10 +15,11 @@
 //      pre-launch demand signal use case, doesn't pretend to be a DB.
 //
 // Real persistence will land with Stripe (Phase 2). Until then this is a
-// honest "we heard you" page — users see success, founder sees log lines,
-// conversion signal is captured without overpromising storage durability.
+// GET /api/waitlist — current count (for landing-page display).
+// POST /api/waitlist — append email to in-process counter + Telegram notify.
 
 import { NextRequest, NextResponse } from "next/server";
+import { recordWaitlistSignup } from "@/app/api/metrics/route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
     .slice(0, 64)
     .replace(/[^\w-]/g, "_");
   _counter += 1;
+  recordWaitlistSignup();
 
   // 1. Always log to server stdout — visible in `dokploy logs calora`.
   //    The operator can grep these and bulk-import to Mailchimp/etc. later.

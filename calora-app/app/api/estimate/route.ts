@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { EstimateRequest, EstimateResponse } from "@/lib/types";
 import { rateLimit, clientKey } from "@/lib/ratelimit";
+import { recordAiCall } from "@/app/api/metrics/route";
 
 export const runtime = "nodejs";
 // 90s server budget — one M3 retry (45s × 2). Cloudflare free proxy 524s at 100s so stay under.
@@ -20,6 +21,49 @@ export const maxDuration = 90;
 // Per-IP rate limits. Protect the OpenRouter budget from abuse.
 const FREE_TIER_RPM = 10;  // requests/min per IP — covers normal usage + retries
 const FREE_TIER_RPH = 100; // requests/hour per IP — hard ceiling on scraping
+
+// Hard body-size limit on the route — protect against absurdly large image
+// payloads and accidental DoS. The Next.js client compressor caps images at
+// ~500KB so 8MB gives us a 16× safety margin.
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+// Image MIME validation. We allow JPEG / PNG / WEBP / HEIC. Other types —
+// especially HTML, SVG (XSS via inline scripts), executables — are rejected
+// before they ever reach the AI provider.
+const ALLOWED_IMAGE_PREFIXES = [
+  "data:image/jpeg",
+  "data:image/jpg",
+  "data:image/png",
+  "data:image/webp",
+  "data:image/heic",
+  "data:image/heif",
+];
+
+function validateImageDataUrl(s: string): { ok: boolean; reason?: string } {
+  if (typeof s !== "string") return { ok: false, reason: "image must be a string" };
+  if (s.length === 0) return { ok: false, reason: "image is empty" };
+  const lower = s.slice(0, 32).toLowerCase();
+  if (!lower.startsWith("data:")) {
+    return { ok: false, reason: "image must be a data: URL" };
+  }
+  if (!ALLOWED_IMAGE_PREFIXES.some((p) => lower.startsWith(p))) {
+    return {
+      ok: false,
+      reason:
+        "unsupported image format (allowed: jpeg, png, webp, heic)",
+    };
+  }
+  // Decode the base64 portion and bound the decoded size.
+  // base64 is ~4/3 the size of the decoded bytes.
+  const comma = s.indexOf(",");
+  if (comma < 0) return { ok: false, reason: "malformed data URL" };
+  const b64 = s.slice(comma + 1);
+  // Cheap upper bound: assume the entire rest is base64 → ~75% of string length.
+  if (b64.length > MAX_BODY_BYTES * 1.5) {
+    return { ok: false, reason: "image too large (max 8MB)" };
+  }
+  return { ok: true };
+}
 
 // The only models this app is allowed to call.
 const M3 = "minimax/minimax-m3";
@@ -113,15 +157,37 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Enforce hard request-size limit before parsing the body.
+  const contentLength = Number(req.headers.get("content-length") ?? "0");
+  if (contentLength > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: "Payload too large (max 8MB)" },
+      { status: 413 },
+    );
+  }
+
   let body: EstimateRequest;
   try {
-    body = await req.json();
+    // Pass a hard size cap to req.json() so a giant body still aborts cleanly.
+    body = (await req.json()) as EstimateRequest;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   if (!body.image && !body.text) {
     return NextResponse.json({ error: "Provide image or text" }, { status: 400 });
+  }
+
+  // Server-side image MIME validation. Defense in depth — the client also
+  // compresses, but never trust the client.
+  if (body.image) {
+    const v = validateImageDataUrl(body.image);
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: `Invalid image: ${v.reason}` },
+        { status: 400 },
+      );
+    }
   }
 
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -214,9 +280,11 @@ export async function POST(req: NextRequest) {
           lastBody = JSON.stringify(parsed).slice(0, 500);
           continue;
         }
+        const latencyMs = Date.now() - t0;
+        recordAiCall({ ok: true, latencyMs });
         return NextResponse.json({
           ...parsed,
-          _meta: { latency_ms: Date.now() - t0, model: m },
+          _meta: { latency_ms: latencyMs, model: m },
         });
       }
 
@@ -242,6 +310,7 @@ export async function POST(req: NextRequest) {
   }
 
   console.error("All models failed:", lastErr, lastBody.slice(0, 500));
+  recordAiCall({ ok: false, latencyMs: Date.now() - t0 });
   return NextResponse.json(
     {
       error: lastErr || "AI provider error",

@@ -2,13 +2,62 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
 
+const SITE = "https://calora.develalfy.me";
+const TITLE = "Calora — snap a meal, get calories instantly";
+const DESCRIPTION =
+  "AI calorie tracker. Snap a photo or type a description, get calorie and macro estimates in 5 seconds. No signup. Data stays on device.";
+
 export const metadata: Metadata = {
-  title: "Calora — snap a meal, get calories instantly",
-  description:
-    "AI calorie tracker. Snap a photo or type a description, get calorie and macro estimates in 5 seconds. No signup. Data stays on device.",
+  metadataBase: new URL(SITE),
+  title: {
+    default: TITLE,
+    template: "%s — Calora",
+  },
+  description: DESCRIPTION,
   applicationName: "Calora",
-  keywords: ["calorie", "tracker", "AI", "food", "photo", "PWA"],
+  keywords: ["calorie", "tracker", "AI", "food", "photo", "PWA", "macro"],
+  authors: [{ name: "Calora" }],
+  creator: "Calora",
+  publisher: "Calora",
+  alternates: {
+    canonical: "/",
+  },
   manifest: "/manifest.json",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: SITE,
+    siteName: "Calora",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Calora — snap a meal, get calories instantly",
+        type: "image/png",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ["/og-image.png"],
+    creator: "@calora",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -51,16 +100,45 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Calora" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        <meta name="theme-color" content="#ff6f4d" />
+        <meta name="color-scheme" content="light dark" />
+        <link rel="manifest" href="/manifest.json" />
       </head>
-      <body className="min-h-full flex flex-col bg-[var(--canvas)] text-[var(--ink)]">
+      <body className="h-full bg-[var(--canvas)] text-[var(--ink)]">
         {children}
-        <Script id="register-sw" strategy="afterInteractive">
-          {`if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((e) => console.error("SW register failed", e));
-  });
-}`}
-        </Script>
+        {/* Structured data: SoftwareApplication for SEO + AI crawlers. */}
+        <Script
+          id="ld-software"
+          type="application/ld+json"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "SoftwareApplication",
+              name: "Calora",
+              url: SITE,
+              applicationCategory: "HealthApplication",
+              operatingSystem: "Web, iOS, Android",
+              description: DESCRIPTION,
+              offers: {
+                "@type": "Offer",
+                price: "0",
+                priceCurrency: "USD",
+                description: "Free tier with 5 scans/day",
+              },
+              featureList: [
+                "Photo calorie estimation",
+                "Text-based calorie estimation",
+                "Edit-before-save",
+                "Daily macro tracking",
+                "History export",
+                "PWA install",
+                "Offline support",
+              ],
+              aggregateRating: undefined, // intentionally unset; never fabricate ratings
+            }),
+          }}
+        />
       </body>
     </html>
   );
