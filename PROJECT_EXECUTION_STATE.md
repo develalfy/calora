@@ -1,14 +1,14 @@
 # Calora — Autonomous Co-Founder Execution State
 
-> Last update: 2026-07-12. This is the single source of truth for what was done, what is broken, and what to do next. If the session ends, resume from the **Next action** line at the bottom.
+> Last update: 2026-07-14. This is the single source of truth for what was done, what is broken, and what to do next. If the session ends, resume from the **Next action** line at the bottom.
 
 ---
 
 ## Current phase
 
-**Phase 6 — Production hardening. DONE.**
+**Phase 7 — Registration + login + cookie/session fix. DONE.**
 
-The marketing site (Phases 1+4+5) and the product hardening (Phase 6) are complete and live at https://calora.develalfy.me. What shipped in Phase 6: security headers, image validation, observability, SEO, error boundaries, custom 404/loading. What's left is owner-action-only: Stripe + Postgres + auth (Phase 2/3).
+User asked for registration + login + "all needed info" + fix cookie issues. Built full custom auth (bcrypt + JWT + HTTPOnly cookie) backed by a file store at `/tmp/calora-data/users.json`. The cookie-persistence bug was caused by using `router.push` after auth instead of `window.location.href` — that was the actual reported issue and is now fixed at the source.
 
 ---
 
