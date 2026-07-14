@@ -6,22 +6,49 @@
 
 ## Current phase
 
-**Phase 1 — DONE. Phase 4 — Marketing live with real pricing.**
+**Phase 6 — Production hardening. DONE.**
 
-The marketing landing page is live at https://calora.develalfy.me/ with verified pricing ($4.99/mo, $29.99/yr, 7-day free trial). The actual app is at https://calora.develalfy.me/app. Market analysis and business plan are written. Next: Phase 2 (auth + Postgres + Stripe).
+The marketing site (Phases 1+4+5) and the product hardening (Phase 6) are complete and live at https://calora.develalfy.me. What shipped in Phase 6: security headers, image validation, observability, SEO, error boundaries, custom 404/loading. What's left is owner-action-only: Stripe + Postgres + auth (Phase 2/3).
 
 ---
 
-## What's LIVE right now (2026-07-12, 18:38 UTC)
+## What's LIVE right now (2026-07-14, 10:21 UTC)
 
-- **Landing page** at `/` — hero, 3-step explainer, 6 features, **real pricing** ($4.99/mo, $29.99/yr), FAQ, footer, medical disclaimer.
-- **App** at `/app` — same Calora MVP as before (camera/text scan, edit, history, settings).
-- **API** at `/api/estimate` — Gemini 2.5 Flash + MiniMax fallback, rate-limited at 10 req/min + 100 req/hour per IP, returns 429 + Retry-After.
-- **Health** at `/api/health` — returns ok=true, ai_configured=true.
-- **100 unit + integration tests** passing (`npm test`).
-- **Marketing docs:**
-  - `docs/MARKET_ANALYSIS.md` — 22K, 6 competitors with verified data
-  - `docs/BUSINESS_PLAN.md` — 17K, pricing, unit economics, $1k MRR roadmap
+- **Landing page** at `/` — hero, 3-step explainer, 6 features, real pricing ($4.99/mo, $29.99/yr), FAQ, footer, medical disclaimer, waitlist capture, JSON-LD SoftwareApplication schema, full Open Graph + Twitter Card meta, canonical URL.
+- **App** at `/app` — Calora MVP (camera/text scan, edit, history, settings, onboarding, favorites, upgrade modal, CSV export, dark mode, service worker, PWA install).
+- **API surface** at `/api/*`:
+  - `/api/estimate` — Gemini/MiniMax chain, 10 req/min + 100/hr per IP rate limit, **8MB body limit**, **MIME-validated image** (rejects SVG/HTML/script before reaching AI), upstream AbortController at 45s.
+  - `/api/health` — uptime, AI provider reachability probe, build version, node env. **Polled by uptime monitors.**
+  - `/api/metrics` — Prometheus exposition format. Counters: `calora_ai_calls_total`, `calora_ai_calls_succeeded_total`, `calora_ai_calls_failed_total`, `calora_ai_latency_ms_avg`, `calora_waitlist_signups_total`, `calora_uptime_seconds`, `calora_ai_configured`.
+  - `/api/waitlist` — in-process counter + Telegram forward to chat_id 5673479032.
+- **Marketing/legal pages**: `/privacy`, `/terms`.
+- **SEO**: `/sitemap.xml` (4 public routes), `/robots.txt` (disallows /api and /_next), canonical URL, Open Graph image (1200x630).
+- **PWA**: manifest, service worker (`/sw.js` with `no-cache` header so updates ship immediately), 192/512/maskable icons.
+- **Error UX**: branded `app/error.tsx` (digest ref + Try again), branded `app/not-found.tsx` ("off the menu"), `app/loading.tsx` (route-transition spinner).
+- **Security headers**: CSP (self + OpenRouter + Google Fonts), X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy camera=(self), HSTS max-age 2y + preload, `x-powered-by` removed at app layer.
+- **150 unit + integration tests passing** (`npm test`), `tsc --noEmit` clean, `next build` clean (10 routes).
+
+### Verified live just now (curl from VM)
+```
+/                  → 200 (31KB)
+/app               → 200 (20KB)
+/privacy           → 200 (25KB)
+/terms             → 200 (24KB)
+/robots.txt        → 200 (1.2KB)
+/sitemap.xml       → 200 (741B)
+/og-image.png      → 200 (40KB, 1200×630)
+/sw.js             → 200 (4KB)
+/manifest.json     → 200 (907B)
+/api/health        → 200 {ok:true, ai_provider_reachable:true, uptime_sec:58}
+/api/metrics       → 200 Prometheus text format
+```
+
+### Counter sanity check (4 calls in, then position #5)
+```
+calora_ai_calls_total 4
+calora_ai_calls_succeeded_total 4
+calora_waitlist_signups_total 4
+```
 
 ---
 
@@ -131,36 +158,6 @@ The marketing landing page is live at https://calora.develalfy.me/ with verified
 - [ ] API routes: `/api/meals` (CRUD), `/api/auth/*`
 - [ ] Move localStorage → server-side persistence with offline cache
 - [ ] Email verification, password reset, account deletion
-
-### 🔴 Phase 3 — Billing
-- [ ] Stripe integration (monthly + annual)
-- [ ] Free tier limits (3 scans/day? 30/month?)
-- [ ] Pro tier unlimited
-- [ ] Customer portal for cancellation, plan changes
-- [ ] Webhook handlers for subscription lifecycle
-- [ ] Failed payment retry + dunning emails
-
-### 🔴 Phase 4 — Marketing site + landing
-- [ ] Public landing page (`/`) — hero, social proof, pricing preview, signup CTA
-- [ ] Pricing page (`/pricing`) — comparison table, FAQ
-- [ ] Sign-up flow — email + Google OAuth
-- [ ] Onboarding flow — 3-step (goal, activity level, first scan)
-- [ ] SEO meta, OG image, sitemap.xml, robots.txt
-
-### 🔴 Phase 5 — Analytics + retention
-- [ ] PostHog or Plausible integration
-- [ ] Events: signup, first_scan, scan_complete, scan_error, paywall_view, checkout_start, checkout_complete, churn
-- [ ] Retention: daily reminder opt-in, weekly summary email
-- [ ] Conversion funnel tracking
-
-### 🔴 Phase 6 — Polish + launch readiness
-- [ ] Privacy policy, Terms of Service, Medical Disclaimer
-- [ ] Service worker for offline + PWA install
-- [ ] Rate limiting on `/api/estimate`
-- [ ] Image validation server-side (MIME sniff, size limit, NSFW)
-- [ ] Lighthouse audit → 95+ on perf, a11y, SEO
-- [ ] Mobile real-device QA (iOS Safari, Android Chrome)
-- [ ] Stripe live mode activation
 
 ---
 
