@@ -42,8 +42,20 @@ export default function LandingPage() {
             FAQ
           </a>
           <Link
+            href="/sign-in"
+            className="hidden sm:inline-block px-3 py-1.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] transition"
+          >
+            Sign in
+          </Link>
+          <Link
+            href="/sign-up"
+            className="px-4 py-2 rounded-full bg-[var(--ink)] text-[var(--canvas)] text-sm font-semibold hover:opacity-90 active:scale-[0.98] transition"
+          >
+            Sign up free
+          </Link>
+          <Link
             href="/app"
-            className="ml-2 px-4 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-semibold shadow-[0_6px_16px_-6px_rgba(255,111,77,0.5)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition"
+            className="px-4 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-semibold shadow-[0_6px_16px_-6px_rgba(255,111,77,0.5)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition"
           >
             Open app
           </Link>
@@ -87,7 +99,7 @@ export default function LandingPage() {
         </div>
 
         <p className="mt-6 text-[12px] text-[var(--ink-muted)]">
-          No signup. Data stays on your device. Works offline.
+          Sign up free to keep your history in sync. No card required.
         </p>
 
         {/* ─── Pro waitlist capture ───
