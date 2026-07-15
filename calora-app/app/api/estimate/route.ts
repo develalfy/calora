@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { EstimateRequest, EstimateResponse } from "@/lib/types";
 import { rateLimit, clientKey } from "@/lib/ratelimit";
+import { readSession } from "@/lib/auth";
 import { recordAiCall } from "@/app/api/metrics/route";
 
 export const runtime = "nodejs";
@@ -154,6 +155,18 @@ export async function POST(req: NextRequest) {
           "X-RateLimit-Remaining": "0",
         },
       },
+    );
+  }
+
+  // ─── Auth gate ───────────────────────────────────────────────────────────
+  // Estimate is the only route that costs us real money (M3 multimodal tokens).
+  // Anon traffic is blocked before body parsing so we don't waste cycles on
+  // payloads we'll never process. The client mirrors this — see app/app/page.tsx.
+  const session = readSession(req.headers.get("cookie") ?? undefined);
+  if (!session) {
+    return NextResponse.json(
+      { error: "Sign in required to estimate calories." },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
     );
   }
 

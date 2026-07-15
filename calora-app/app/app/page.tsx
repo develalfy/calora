@@ -95,6 +95,13 @@ export default function HomePage() {
   const [now, setNow] = useState<number>(() => Date.now());
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [scanRemaining, setScanRemaining] = useState(5);
+  // Auth state for the /api/estimate gate. `null` once we've confirmed the
+  // user is not signed in. `undefined` while the /me fetch is in-flight.
+  // We render disabled/CTA copy on the home view while authReady is false so
+  // anon users never see the capture button enabled.
+  const [user, setUser] = useState<
+    { id: string; email: string; name: string } | null | undefined
+  >(undefined);
 
   useEffect(() => {
     setLog(loadLog());
@@ -107,6 +114,12 @@ export default function HomePage() {
       setView("onboarding");
     }
     track("app_open");
+    // Probe session on mount. /api/auth/me returns {user:null} for anon;
+    // it never throws and we don't want to crash the home view if it does.
+    fetch("/api/auth/me", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : { user: null }))
+      .then((d) => setUser(d?.user ?? null))
+      .catch(() => setUser(null));
   }, []);
 
   // Tick once a minute so "today" stays current
@@ -160,6 +173,21 @@ export default function HomePage() {
   }, [log, now]);
 
   const onCapture = () => {
+    // Auth gate. If we know the user is anon (or haven't confirmed yet),
+    // bounce to sign-in rather than letting them reach the capture form.
+    // The /api/estimate route enforces the same gate server-side as the
+    // source of truth, so a stale session can't reach the AI either.
+    if (user === null) {
+      track("auth_required_capture");
+      window.location.href = "/sign-in?next=/app";
+      return;
+    }
+    if (user === undefined) {
+      // /me still in flight — wait one tick and retry. The page renders a
+      // disabled button until user resolves so this is rare.
+      setTimeout(onCapture, 100);
+      return;
+    }
     sessionStorage.removeItem("calora:pending-estimate");
     sessionStorage.removeItem("calora:pending-result");
     setView("capture");
@@ -184,6 +212,12 @@ export default function HomePage() {
             goal={settings.goalCalories}
             streak={streak}
             longestStreak={longestStreak}
+            authReady={user !== undefined}
+            signedIn={user !== null && user !== undefined}
+            onSignIn={() => {
+              track("auth_required_capture");
+              window.location.href = "/sign-in?next=/app";
+            }}
             onCapture={onCapture}
             onHistory={() => setView("history")}
             onSettings={() => setView("settings")}
@@ -391,6 +425,9 @@ function HomeView({
   goal,
   streak,
   longestStreak,
+  authReady,
+  signedIn,
+  onSignIn,
   onCapture,
   onHistory,
   onSettings,
@@ -402,6 +439,9 @@ function HomeView({
   goal: number;
   streak: number;
   longestStreak: number;
+  authReady: boolean;
+  signedIn: boolean;
+  onSignIn: () => void;
   onCapture: () => void;
   onHistory: () => void;
   onSettings: () => void;
@@ -493,17 +533,43 @@ function HomeView({
           />
         </div>
 
-        {/* Primary CTA */}
-        <Button
-          variant="primary"
-          size="lg"
-          full
-          className="mt-6"
-          onClick={onCapture}
-        >
-          <IconCamera size={20} />
-          Log a meal
-        </Button>
+        {/* Primary CTA — auth-gated. Anon users see "Sign in to start";
+            signed-out sessions can't reach /api/estimate (server enforces). */}
+        {!authReady ? (
+          <Button
+            variant="primary"
+            size="lg"
+            full
+            className="mt-6"
+            disabled
+            aria-busy="true"
+          >
+            <IconCamera size={20} />
+            Loading…
+          </Button>
+        ) : !signedIn ? (
+          <Button
+            variant="primary"
+            size="lg"
+            full
+            className="mt-6"
+            onClick={onSignIn}
+          >
+            <IconCamera size={20} />
+            Sign in to log a meal
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            size="lg"
+            full
+            className="mt-6"
+            onClick={onCapture}
+          >
+            <IconCamera size={20} />
+            Log a meal
+          </Button>
+        )}
 
         {(streak >= 1 || longestStreak >= 1) && (
           <div className="mt-3 flex items-center justify-center gap-3 text-[12px] text-[var(--ink-muted)]">
@@ -543,11 +609,25 @@ function HomeView({
           <EmptyState
             icon={<IconLeaf size={22} />}
             title="No meals yet today"
-            description="Snap a photo or describe what you ate — your progress rolls up here."
+            description={
+              signedIn
+                ? "Snap a photo or describe what you ate — your progress rolls up here."
+                : "Sign in to start tracking your meals."
+            }
             action={
-              <Button variant="primary" onClick={onCapture}>
-                <IconCamera size={18} /> Log your first meal
-              </Button>
+              !authReady ? (
+                <Button variant="primary" disabled aria-busy="true">
+                  <IconCamera size={18} /> Loading…
+                </Button>
+              ) : !signedIn ? (
+                <Button variant="primary" onClick={onSignIn}>
+                  <IconCamera size={18} /> Sign in to start
+                </Button>
+              ) : (
+                <Button variant="primary" onClick={onCapture}>
+                  <IconCamera size={18} /> Log your first meal
+                </Button>
+              )
             }
           />
         ) : (
@@ -1184,6 +1264,14 @@ function LoadingView({
           clearTimeout(timer);
         }
         if (!res.ok) {
+          // 401 → session is gone or never existed. Bounce to sign-in so the
+          // user can re-auth and retry. The capture-view gate should make
+          // this unreachable in normal flow, but it's the safety net.
+          if (res.status === 401) {
+            track("auth_required_estimate");
+            window.location.href = "/sign-in?next=/app";
+            return;
+          }
           // 429 (rate limit) and 5xx → worth a single retry. 4xx (except 429) → fail.
           const retriable = res.status === 429 || res.status >= 500;
           if (retriable && attempt < 1) return tryOnce(attempt + 1);

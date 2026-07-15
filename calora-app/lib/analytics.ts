@@ -35,6 +35,9 @@ export type EventName =
   | "upgrade_modal_view"
   | "upgrade_modal_dismiss"
   | "upgrade_cta_click"
+  // ── Auth gates ─────────────────────────────────────────────────────────
+  | "auth_required_capture"
+  | "auth_required_estimate"
   // ── Retention ──────────────────────────────────────────────────────────
   | "history_view"
   | "csv_export"

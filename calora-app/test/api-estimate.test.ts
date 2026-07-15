@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/estimate/route";
+import { COOKIE_NAME, signSession } from "@/lib/auth";
 
 const fetchMock = vi.fn();
 global.fetch = fetchMock as unknown as typeof fetch;
@@ -14,12 +15,20 @@ function uniqueIp(): string {
   return `test-ip-${++ipCounter}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// Forge a valid session cookie for the test request. /api/estimate now
+// requires auth (gated 2026-07-15 to stop anon AI spend), so all happy-path
+// tests must present a valid session. The 401 test builds a request without
+// this cookie on purpose.
+const TEST_TOKEN = signSession("test-user-id", "test@example.com");
+const TEST_COOKIE = `${COOKIE_NAME}=${TEST_TOKEN}`;
+
 function jsonRequest(body: unknown, query = "", ip = uniqueIp()): NextRequest {
   return new NextRequest(`http://localhost/api/estimate${query}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-forwarded-for": ip,
+      cookie: TEST_COOKIE,
     },
     body: JSON.stringify(body),
   });
@@ -47,10 +56,40 @@ beforeEach(() => {
 });
 
 describe("POST /api/estimate — input validation", () => {
+  it("returns 401 when no session cookie is present", async () => {
+    const req = new NextRequest("http://localhost/api/estimate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": uniqueIp(),
+        // explicitly no cookie header
+      },
+      body: JSON.stringify({ text: "1 apple" }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toMatch(/sign in/i);
+  });
+
+  it("returns 401 with garbage cookie", async () => {
+    const req = new NextRequest("http://localhost/api/estimate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": uniqueIp(),
+        cookie: `${COOKIE_NAME}=garbage.garbage.garbage`,
+      },
+      body: JSON.stringify({ text: "1 apple" }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+  });
+
   it("returns 400 on invalid JSON", async () => {
     const req = new NextRequest("http://localhost/api/estimate", {
       method: "POST",
-      headers: { "x-forwarded-for": uniqueIp() },
+      headers: { "x-forwarded-for": uniqueIp(), cookie: TEST_COOKIE },
       body: "not json",
     });
     const res = await POST(req);
