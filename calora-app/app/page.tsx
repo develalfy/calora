@@ -13,6 +13,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { IconCamera, IconCheck, IconChevronRight, IconLeaf, IconSparkle } from "@/components/Icons";
+import {
+  readRefFromUrl,
+  setRefCookieClient,
+} from "@/lib/attribution";
 
 export default function LandingPage() {
   return (
@@ -481,6 +485,15 @@ function WaitlistForm() {
   // Fetch the current count once on mount so we can show "Join 47 others".
   useEffect(() => {
     let alive = true;
+    // First-touch attribution: if the URL has ?ref=... (creator campaign
+    // link), set the cookie so signup captures the partner that drove the
+    // visit. setRefCookieClient is a no-op if the cookie already exists —
+    // first-touch wins.
+    const ref = readRefFromUrl(
+      typeof window !== "undefined" ? window.location.href : null,
+    );
+    if (ref) setRefCookieClient(ref);
+
     fetch("/api/waitlist", { method: "GET" })
       .then((r) => (r.ok ? r.json() : { count: 0 }))
       .then((j) => {

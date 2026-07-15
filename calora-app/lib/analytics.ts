@@ -42,7 +42,20 @@ export type EventName =
   | "history_view"
   | "csv_export"
   | "favorite_add"
-  | "favorite_remove";
+  | "favorite_remove"
+  // ── B2B funnel (added 2026-07-15 monetization push) ────────────────────
+  | "b2b_view"
+  | "b2b_cta_click"
+  | "b2b_demo_request"
+  | "b2b_demo_request_failed"
+  // ── Top-of-funnel (added 2026-07-15 — anon /try page) ──────────────────
+  | "try_view"
+  | "try_estimate_start"
+  | "try_estimate_complete"
+  | "try_to_signup"
+  // ── Embed (added 2026-07-15 — /embed public demo) ──────────────────────
+  | "embed_view"
+  | "embed_demo_call";
 
 export interface EventPayload {
   [key: string]: string | number | boolean | null | undefined;

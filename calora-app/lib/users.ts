@@ -47,6 +47,7 @@ export type User = {
   name: string | null;
   createdAt: number;
   lastLoginAt: number | null;
+  ref?: string | null; // attribution ref (creator campaign) — first-touch
 };
 
 export type Store = {
@@ -121,6 +122,7 @@ export type CreateUserInput = {
   email: string;
   password: string;
   name?: string | null;
+  ref?: string | null;
 };
 
 export type CreateUserResult =
@@ -154,6 +156,7 @@ export async function createUser(input: CreateUserInput): Promise<CreateUserResu
       name: input.name?.trim() || null,
       createdAt: Date.now(),
       lastLoginAt: null,
+      ref: input.ref ?? null,
     };
     store.users[id] = user;
     store.byEmail[email] = id;
