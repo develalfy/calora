@@ -36,6 +36,13 @@ import {
 import { recordScan, scansRemaining, isOverFreeLimit } from "@/lib/usage";
 import { track } from "@/lib/analytics";
 import {
+  attachResult,
+  clearEnvelope,
+  readEnvelope,
+  readRequest,
+  seedEnvelope,
+} from "@/lib/pending-envelope";
+import {
   Button,
   Card,
   ConfidenceBadge,
@@ -188,14 +195,12 @@ export default function HomePage() {
       setTimeout(onCapture, 100);
       return;
     }
-    sessionStorage.removeItem("calora:pending-estimate");
-    sessionStorage.removeItem("calora:pending-result");
+    clearEnvelope();
     setView("capture");
   };
 
   const onHome = () => {
-    sessionStorage.removeItem("calora:pending-estimate");
-    sessionStorage.removeItem("calora:pending-result");
+    clearEnvelope();
     setView("home");
   };
 
@@ -258,10 +263,11 @@ export default function HomePage() {
                 return;
               }
               track("scan_start", { hasImage: !!req.image });
-              sessionStorage.setItem(
-                "calora:pending-estimate",
-                JSON.stringify(req),
-              );
+              // Seed the shared envelope (lib/pending-envelope). Capture
+              // picks the meal-type; we bundle the request alongside
+              // whatever the AI returns so EditView can read both
+              // atomically without a race.
+              seedEnvelope({ image: req.image, text: req.text }, req.meal);
               setView("loading");
             }}
             recentEntries={log.slice(0, 5)}
@@ -279,10 +285,10 @@ export default function HomePage() {
                 items: result.items.length,
                 confidence: result.confidence,
               });
-              sessionStorage.setItem(
-                "calora:pending-result",
-                JSON.stringify(result),
-              );
+              // Merge the AI result into the envelope seeded above so
+              // EditView can read both result and the original meal-type
+              // atomically.
+              attachResult(result);
               setView("edit");
             }}
             onError={() => {
@@ -1238,16 +1244,11 @@ function LoadingView({
     );
 
     const run = async () => {
-      const raw = sessionStorage.getItem("calora:pending-estimate");
-      if (!raw) {
+      const req = readRequest();
+      if (!req) {
         setErr("No request found");
         return;
       }
-      const req = JSON.parse(raw) as {
-        image?: string;
-        text?: string;
-        meal: MealType;
-      };
 
       // Client-side fetch timeout — fails fast so the user can retry. Server cap is 90s but
       // Cloudflare free proxy times out at 100s; stay well under both.
@@ -1290,7 +1291,6 @@ function LoadingView({
           if (attempt < 1) return tryOnce(attempt + 1);
           throw new Error("Malformed response");
         }
-        sessionStorage.removeItem("calora:pending-estimate");
         onDone(data as EstimateResult);
       };
 
@@ -1397,20 +1397,13 @@ function EditView({
   const [pendingImage, setPendingImage] = useState<string | undefined>();
 
   useEffect(() => {
-    const raw = sessionStorage.getItem("calora:pending-result");
-    const reqRaw = sessionStorage.getItem("calora:pending-estimate");
-    if (raw) setResult(JSON.parse(raw));
-    if (reqRaw) {
-      try {
-        const req = JSON.parse(reqRaw) as {
-          image?: string;
-          text?: string;
-          meal: MealType;
-        };
-        setMeal(req.meal);
-        setPendingImage(req.image);
-      } catch {}
-    }
+    // Read both halves of the envelope in one shot (lib/pending-envelope).
+    // The previous implementation read two separate keys with a race
+    // window — see the helper's header comment for the bug history.
+    const env = readEnvelope();
+    if (env.result) setResult(env.result);
+    if (env.request?.meal) setMeal(env.request.meal);
+    if (env.request?.image) setPendingImage(env.request.image);
   }, []);
 
   if (!result) {
@@ -2289,15 +2282,23 @@ function OnboardingView({
               Know your calories.
             </h1>
             <p className="text-[15px] text-[var(--ink-soft)] leading-relaxed text-center max-w-sm mx-auto mb-8">
-              No signup. No database hunting. Open the app, snap the plate,
-              done in about 5 seconds.
+              {/* Previously this claimed "No signup" — false after the auth gate
+                  shipped on commit 6748120. The email sign-in is fast (email +
+                  password, no email confirmation step) so we lead with the
+                  speed/clarity angle instead. */}
+              Sign in once, then snap a plate and forget the math.
+              About 5 seconds per meal.
             </p>
 
             <ul className="space-y-3 mb-10">
               {[
                 "Photo or text — your choice",
                 "Edit anything before you save",
-                "Your data stays on your device",
+                // The auth gate moves logs server-side, so the "stays on your
+                // device" promise is now qualified. Trade for a clearer
+                // promise: we don't sell or share your data. CSV export is
+                // already wired (lib/export.ts) for portability.
+                "Your data is yours — export to CSV anytime",
               ].map((b) => (
                 <li key={b} className="flex items-start gap-2.5 text-[14px] text-[var(--ink-soft)]">
                   <span className="w-5 h-5 rounded-full bg-[var(--success-soft)] text-[var(--success)] flex items-center justify-center shrink-0 mt-0.5">

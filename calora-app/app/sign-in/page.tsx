@@ -3,6 +3,7 @@
 import { Suspense, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { signUpHrefWithNext } from "@/lib/auth-redirect";
 
 function SignInForm() {
   const params = useSearchParams();
@@ -112,17 +113,31 @@ function SignInForm() {
 export default function SignInPage() {
   return (
     <main className="min-h-[100dvh] flex flex-col bg-[var(--canvas)]">
-      <header className="px-5 pt-6 pb-4 max-w-5xl w-full mx-auto flex items-center justify-between">
-        <Link href="/" className="font-[family-name:var(--font-display)] text-[22px] font-semibold tracking-tight text-[var(--ink)]">
-          calora
-        </Link>
-        <Link href="/sign-up" className="text-sm text-[var(--ink-soft)] hover:text-[var(--ink)]">
-          New here? Create account
-        </Link>
-      </header>
+      <Suspense fallback={<div className="flex-1" />}>
+        <HeaderWithNext />
+      </Suspense>
       <Suspense fallback={<div className="flex-1" />}>
         <SignInForm />
       </Suspense>
     </main>
+  );
+}
+
+/** Header that forwards ?next= into the cross-link to /sign-up so the
+ *  user's intended return path isn't dropped when they pick the wrong
+ *  flow. Lives in its own component so useSearchParams can be wrapped
+ *  by Suspense (Next.js requirement). */
+function HeaderWithNext() {
+  const params = useSearchParams();
+  const next = params.get("next");
+  return (
+    <header className="px-5 pt-6 pb-4 max-w-5xl w-full mx-auto flex items-center justify-between">
+      <Link href="/" className="font-[family-name:var(--font-display)] text-[22px] font-semibold tracking-tight text-[var(--ink)]">
+        calora
+      </Link>
+      <Link href={signUpHrefWithNext(next)} className="text-sm text-[var(--ink-soft)] hover:text-[var(--ink)]">
+        New here? Create account
+      </Link>
+    </header>
   );
 }

@@ -1,12 +1,20 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 // useSearchParams() in Next.js 15+ MUST be inside a <Suspense> boundary.
 // This is the inner component that actually reads the search param.
 // The page-level default export wraps this in <Suspense>.
+
+/** Build a "/sign-in?next=…" href that preserves the user's intended
+ *  return path. Mirror of the helper in app/sign-in/page.tsx so both
+ *  cross-links round-trip the next= context. */
+function signInHref(next: string | null): string {
+  if (!next) return "/sign-in";
+  return `/sign-in?next=${encodeURIComponent(next)}`;
+}
 
 function SignUpForm() {
   const params = useSearchParams();
@@ -140,15 +148,30 @@ function SignUpForm() {
 export default function SignUpPage() {
   return (
     <main className="min-h-[100dvh] flex flex-col bg-[var(--canvas)]">
-      <header className="px-5 pt-6 pb-4 max-w-5xl w-full mx-auto flex items-center justify-between">
-        <Link href="/" className="font-[family-name:var(--font-display)] text-[22px] font-semibold tracking-tight text-[var(--ink)]">
-          calora
-        </Link>
-        <Link href="/sign-in" className="text-sm text-[var(--ink-soft)] hover:text-[var(--ink)]">
-          Have an account? Sign in
-        </Link>
-      </header>
-      <SignUpForm />
+      <Suspense fallback={<div className="flex-1" />}>
+        <HeaderWithNext />
+      </Suspense>
+      <Suspense fallback={<div className="flex-1" />}>
+        <SignUpForm />
+      </Suspense>
     </main>
+  );
+}
+
+/** Header that forwards ?next= into the cross-link to /sign-in so the
+ *  user's intended return path isn't dropped when they already have an
+ *  account but landed on /sign-up via deep-link. */
+function HeaderWithNext() {
+  const params = useSearchParams();
+  const next = params.get("next");
+  return (
+    <header className="px-5 pt-6 pb-4 max-w-5xl w-full mx-auto flex items-center justify-between">
+      <Link href="/" className="font-[family-name:var(--font-display)] text-[22px] font-semibold tracking-tight text-[var(--ink)]">
+        calora
+      </Link>
+      <Link href={signInHref(next)} className="text-sm text-[var(--ink-soft)] hover:text-[var(--ink)]">
+        Have an account? Sign in
+      </Link>
+    </header>
   );
 }
