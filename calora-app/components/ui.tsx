@@ -97,7 +97,9 @@ export function PageHeader({
   return (
     <header className="px-5 pt-5 pb-4">
       <div className="flex items-start gap-3">
-        <div className="w-9 shrink-0 flex items-center pt-1">{back}</div>
+        {/* w-11 matches IconButton's hit area so the back button never overlaps
+            the title. (Was w-9 → 4px overflow each side, clip the first letter.) */}
+        <div className="w-11 shrink-0 flex items-center pt-1">{back}</div>
         <div className="flex-1 min-w-0">
           <h1 className="font-[family-name:var(--font-display)] text-[22px] leading-[1.4] font-semibold tracking-[-0.01em] text-[var(--ink)] mb-1.5">
             {title}

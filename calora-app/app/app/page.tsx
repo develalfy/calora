@@ -477,9 +477,12 @@ function HomeView({
       {/* ───── Hero / greeting + ring ───── */}
       <section className="px-5 pb-2">
         <p className="text-[13px] text-[var(--ink-muted)] mb-3">
-          {greeting}. {today.length === 0
-            ? "Let's start with today's first meal."
-            : "Here's where you are today."}
+          {greeting}.{" "}
+          {!signedIn
+            ? "Sign in to log your first meal."
+            : today.length === 0
+              ? "Let's start with today's first meal."
+              : "Here's where you are today."}
         </p>
 
         <HeroRing
@@ -488,6 +491,7 @@ function HomeView({
           remaining={remaining}
           pct={pct}
           overshoot={overshoot}
+          signedIn={signedIn}
         />
 
         {/* Macro bars */}
@@ -662,12 +666,14 @@ function HeroRing({
   remaining,
   pct,
   overshoot,
+  signedIn,
 }: {
   value: number;
   goal: number;
   remaining: number;
   pct: number;
   overshoot: boolean;
+  signedIn: boolean;
 }) {
   const r = 78;
   const c = 2 * Math.PI * r;
@@ -738,7 +744,9 @@ function HeroRing({
       <div className="mt-4 text-[13px] font-medium text-center">
         {value === 0 ? (
           <span className="text-[var(--ink-muted)]">
-            Log a meal to start tracking
+            {/* Anon home doesn't expose the "log" verb — the CTA copy
+                already drives the action. Auth-aware so the tone matches. */}
+            {signedIn ? "Log a meal to start tracking" : "Sign in to start tracking"}
           </span>
         ) : overshoot ? (
           <span style={{ color: "var(--warning)" }}>
