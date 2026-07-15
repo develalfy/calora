@@ -46,6 +46,18 @@ export default function LandingPage() {
             FAQ
           </a>
           <Link
+            href="/try"
+            className="hidden sm:inline-block px-3 py-1.5 text-sm font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
+          >
+            Try without signup
+          </Link>
+          <Link
+            href="/b2b"
+            className="hidden sm:inline-block px-3 py-1.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] transition"
+          >
+            For Teams
+          </Link>
+          <Link
             href="/sign-in"
             className="hidden sm:inline-block px-3 py-1.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] transition"
           >
@@ -87,23 +99,27 @@ export default function LandingPage() {
 
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link
-            href="/app"
+            href="/try"
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 rounded-[20px] bg-[var(--accent)] text-white text-base font-semibold shadow-[0_8px_24px_-8px_rgba(255,111,77,0.45)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition"
           >
             <IconCamera size={20} />
-            Try Calora — it's free
+            Try now — no signup
             <IconChevronRight size={18} />
           </Link>
-          <a
-            href="#how"
-            className="text-sm font-medium text-[var(--ink-soft)] hover:text-[var(--ink)] px-4 py-2"
+          <Link
+            href="/sign-up"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 rounded-[20px] bg-[var(--ink)] text-[var(--canvas)] text-base font-semibold hover:opacity-90 active:scale-[0.98] transition"
           >
-            See how it works →
-          </a>
+            Sign up free
+          </Link>
         </div>
 
-        <p className="mt-6 text-[12px] text-[var(--ink-muted)]">
-          Sign up free to keep your history in sync. No card required.
+        <p className="mt-5 text-[12px] text-[var(--ink-muted)]">
+          Or jump straight to{" "}
+          <Link href="/app" className="underline underline-offset-2 hover:text-[var(--ink-soft)]">
+            the full app
+          </Link>
+          . 5 free scans per day after signup.
         </p>
 
         {/* ─── Pro waitlist capture ───
