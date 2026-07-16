@@ -129,19 +129,7 @@ export default function AccountPage() {
           </dl>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-[var(--border)] bg-[var(--surface-soft)] p-6">
-          <h2 className="text-[16px] font-semibold text-[var(--ink)]">Plan</h2>
-          <p className="mt-1 text-[13px] text-[var(--ink-soft)]">
-            You're on the Free tier — 5 scans per day, stored on this device. Cloud sync and Pro are coming next.
-          </p>
-          <button
-            disabled
-            className="mt-4 w-full sm:w-auto px-5 py-3 rounded-2xl bg-[var(--accent)] text-white text-[14px] font-semibold opacity-50 cursor-not-allowed"
-            title="Coming soon"
-          >
-            Upgrade to Pro — coming soon
-          </button>
-        </div>
+        <PlanCard />
 
         <div className="mt-6 rounded-3xl border border-[var(--border)] bg-[var(--surface-soft)] p-6">
           <h2 className="text-[16px] font-semibold text-[var(--ink)]">Session</h2>
@@ -162,5 +150,181 @@ export default function AccountPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+interface BillingState {
+  hasSubscription: boolean;
+  plan: string;
+  status: string;
+  accessTier: "active" | "grace" | "inactive";
+  currentPeriodEnd: string | null;
+  stripeReady: boolean;
+}
+
+function PlanCard() {
+  const [state, setState] = useState<BillingState | null>(null);
+  const [pending, setPending] = useState<"upgrade" | "portal" | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/billing/status", {
+          credentials: "same-origin",
+        });
+        if (!r.ok) return;
+        const j = (await r.json()) as BillingState;
+        if (!cancelled) setState(j);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function startCheckout() {
+    setErr(null);
+    setPending("upgrade");
+    try {
+      const r = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ plan: "pro_year" }),
+      });
+      const j = await r.json();
+      if (r.status === 503) {
+        setErr(
+          `Payments are being set up — Stripe ${j.reason ?? "config pending"}. Try again later.`,
+        );
+        return;
+      }
+      if (!r.ok || !j.url) {
+        setErr(j.message ?? "Could not start checkout.");
+        return;
+      }
+      window.location.href = j.url;
+    } catch {
+      setErr("Network error.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function openPortal() {
+    setErr(null);
+    setPending("portal");
+    try {
+      const r = await fetch("/api/billing/portal", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const j = await r.json();
+      if (r.status === 503) {
+        setErr(
+          `Payments are being set up — Stripe ${j.reason ?? "config pending"}. Try again later.`,
+        );
+        return;
+      }
+      if (r.status === 400 && j.code === "no_subscription") {
+        setErr("You don't have a subscription yet.");
+        return;
+      }
+      if (!r.ok || !j.url) {
+        setErr("Could not open billing portal.");
+        return;
+      }
+      window.location.href = j.url;
+    } catch {
+      setErr("Network error.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  const tier = state?.accessTier ?? "inactive";
+
+  return (
+    <div className="mt-6 rounded-3xl border border-[var(--border)] bg-[var(--surface-soft)] p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-[16px] font-semibold text-[var(--ink)]">Plan</h2>
+          <p className="mt-1 text-[14px] text-[var(--ink-soft)]">
+            {state === null ? (
+              "Loading…"
+            ) : tier === "active" ? (
+              <>
+                You&apos;re on <strong>{state.plan}</strong>. We bill on{" "}
+                <strong>{state.currentPeriodEnd}</strong>.
+              </>
+            ) : tier === "grace" ? (
+              <>
+                Payment failed. Update your card to keep{" "}
+                <strong>{state.plan}</strong>.
+              </>
+            ) : (
+              <>
+                You&apos;re on <strong>Free</strong>. 5 scans per day, history
+                stays on this device. Pro adds cloud sync, barcode scanning,
+                and PDF reports.
+              </>
+            )}
+          </p>
+        </div>
+        {tier === "active" && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] text-[11px] font-semibold uppercase tracking-wider">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+            Pro
+          </span>
+        )}
+        {tier === "grace" && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[11px] font-semibold uppercase tracking-wider">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Past due
+          </span>
+        )}
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        {tier === "inactive" && (
+          <button
+            onClick={startCheckout}
+            disabled={Boolean(pending === "upgrade" || (state && !state.stripeReady))}
+            className="px-5 py-3 rounded-2xl bg-[var(--accent)] text-white text-[14px] font-semibold hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-50 transition"
+          >
+            {pending === "upgrade"
+              ? "Opening checkout…"
+              : state && !state.stripeReady
+                ? "Payments being set up"
+                : "Upgrade to Pro"}
+          </button>
+        )}
+        {(tier === "active" || tier === "grace") && (
+          <button
+            onClick={openPortal}
+            disabled={Boolean(pending === "portal" || (state && !state.stripeReady))}
+            className="px-5 py-3 rounded-2xl bg-[var(--accent)] text-white text-[14px] font-semibold hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-50 transition"
+          >
+            {pending === "portal" ? "Opening…" : "Manage subscription"}
+          </button>
+        )}
+        <Link
+          href="/pricing"
+          className="px-5 py-3 rounded-2xl border border-[var(--border)] text-[var(--ink)] text-[14px] font-medium hover:bg-[var(--canvas)] transition"
+        >
+          Compare plans
+        </Link>
+      </div>
+
+      {err && (
+        <p className="mt-3 text-[13px] text-amber-700 dark:text-amber-300">
+          {err}
+        </p>
+      )}
+    </div>
   );
 }

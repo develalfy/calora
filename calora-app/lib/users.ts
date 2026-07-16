@@ -48,6 +48,12 @@ export type User = {
   createdAt: number;
   lastLoginAt: number | null;
   ref?: string | null; // attribution ref (creator campaign) — first-touch
+  /**
+   * Active subscription. `undefined` for free users. Set by Stripe webhook
+   * after a successful checkout, cleared when the subscription is permanently
+   * canceled or refunded.
+   */
+  subscription?: import("./billing").StoredSubscription;
 };
 
 export type Store = {
@@ -195,6 +201,42 @@ export async function updatePassword(
     const u = store.users[userId];
     if (!u) return false;
     u.passwordHash = await bcrypt.hash(newPassword, 12);
+    await writeStoreAtomic(store);
+    return true;
+  });
+}
+
+/**
+ * Generic partial-update for any whitelisted fields. Used by:
+ *  - /api/billing/webhook to write the subscription record on Stripe events.
+ *  - /api/auth/signup to set `ref` on first-touch attribution (already wired
+ *    at create time, but this lets us update for retroactive fixes).
+ *
+ * SECURITY: only fields in WHITELIST may be patched. Do NOT pass `id`,
+ * `email`, `passwordHash`, or `createdAt` — those are immutable after creation.
+ */
+const USER_PATCH_WHITELIST = [
+  "name",
+  "lastLoginAt",
+  "ref",
+  "subscription",
+] as const;
+export type UserPatch = Partial<Pick<User, (typeof USER_PATCH_WHITELIST)[number]>>;
+
+export async function updateUser(
+  userId: string,
+  patch: UserPatch,
+): Promise<boolean> {
+  return withWriteLock(async () => {
+    const store = await readStore();
+    const u = store.users[userId];
+    if (!u) return false;
+    for (const key of USER_PATCH_WHITELIST) {
+      if (key in patch) {
+        // @ts-expect-error — narrowing done by whitelist at compile time.
+        u[key] = patch[key] as User[(typeof USER_PATCH_WHITELIST)[number]];
+      }
+    }
     await writeStoreAtomic(store);
     return true;
   });

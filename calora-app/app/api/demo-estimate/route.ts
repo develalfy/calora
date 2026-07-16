@@ -141,7 +141,12 @@ export async function POST(req: NextRequest) {
 
   if (result.ok) {
     recordDemoCall({ ok: true, latencyMs: result.data._meta.latency_ms });
-    return NextResponse.json(result.data);
+    // Strip vendor-specific fields before returning to anon client.
+    // We keep latency_ms (useful for the UI's "X ms" badge) but drop
+    // `model` so a competitor scraping /try responses can't reverse-engineer
+    // our AI provider.
+    const { _meta, ...rest } = result.data;
+    return NextResponse.json({ ...rest, _meta: { latency_ms: _meta.latency_ms } });
   }
 
   recordDemoCall({ ok: false, latencyMs: 0 });

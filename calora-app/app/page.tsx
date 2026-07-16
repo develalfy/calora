@@ -33,12 +33,12 @@ export default function LandingPage() {
           >
             How it works
           </a>
-          <a
-            href="#pricing"
+          <Link
+            href="/pricing"
             className="hidden sm:inline-block px-3 py-1.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] transition"
           >
             Pricing
-          </a>
+          </Link>
           <a
             href="#faq"
             className="hidden sm:inline-block px-3 py-1.5 text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] transition"
@@ -284,8 +284,8 @@ export default function LandingPage() {
 
           <div className="mt-8 text-center text-[12px] text-[var(--ink-muted)] space-y-1">
             <p>
-              Annual plan: <span className="font-semibold text-[var(--ink-soft)]">$29.99/year</span>{" "}
-              (50% off, $2.50/month equivalent).
+              Annual plan: <span className="font-semibold text-[var(--ink-soft)]">$39.99/year</span>{" "}
+              (save 33% vs monthly, $3.33/month equivalent).
             </p>
             <p>
               We&apos;ll email you 24 hours before your trial ends. Cancel anytime,
@@ -332,7 +332,7 @@ export default function LandingPage() {
               the app, snap the plate, done.
             </Faq>
             <Faq q="When does Pro launch?">
-              Pro is live now at $4.99/month or $29.99/year, with a 7-day free
+              Pro is live now at $4.99/month or $39.99/year, with a 7-day free
               trial. We&apos;re still validating features, so early Pro users
               get grandfathered pricing for life.
             </Faq>

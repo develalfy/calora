@@ -10,8 +10,25 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: ["/", "/app", "/privacy", "/terms"],
-        disallow: ["/api/", "/_next/", "/icon-"],
+        allow: [
+          "/",
+          "/try",
+          "/b2b",
+          "/embed",
+          "/pricing",
+          "/app",
+          "/privacy",
+          "/terms",
+        ],
+        disallow: [
+          "/api/",
+          "/sign-in",
+          "/sign-up",
+          "/forgot-password",
+          "/account",
+          "/_next/",
+          "/icon-",
+        ],
       },
     ],
     sitemap: `${SITE}/sitemap.xml`,

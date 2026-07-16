@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
       // Images: self + data: (for thumbnails) + blob: (camera captures)
       "img-src 'self' data: blob: https:",
       // XHR/fetch: self + OpenRouter (the only external API we call)
-      "connect-src 'self' https://openrouter.ai https://api.telegram.org https://fonts.googleapis.com https://fonts.gstatic.com",
+      "connect-src 'self' https://openrouter.ai https://api.telegram.org https://fonts.googleapis.com https://fonts.gstatic.com https://accounts.google.com https://appleid.apple.com",
       // Frames: nobody should frame us
       "frame-ancestors 'none'",
       // Form targets: only self
